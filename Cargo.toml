@@ -1,0 +1,19 @@
+[package]
+name = "krunai"
+version = "0.1.0"
+authors = ["Sergio Lopez <slp@redhat.com>"]
+description = "Create microVMs for running AI agents"
+repository = "https://github.com/slp/krunai"
+license = "Apache-2.0"
+edition = "2018"
+build = "build.rs"
+
+[dependencies]
+clap = {version = "4.4.6", features = ["derive"]}
+libc = "0.2.82"
+mac_address = "1.1"
+krun-sys = "1.10.0"
+serde = "1.0.120"
+serde_derive = "1.0.120"
+toml = "0.5"
+nix = {version = "0.27.1", features = ["socket", "fs", "process"]}
