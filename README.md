@@ -56,6 +56,8 @@ cd ~/Project/myproject
 krunai create myagent agent-setup.sh
 ```
 
+NOTE: Check the [contrib/](contrib/) folder for some examples.
+
 If your agent accepts network connections (i.e. from an IDE), you can expose the agent's port using `--port HOST_PORT:GUEST_PORT` (can be specified multiple times if more that one port needs to be exposed):
 
 ```bash
