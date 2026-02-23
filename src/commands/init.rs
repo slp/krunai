@@ -25,8 +25,8 @@ const TEMPLATE_DISK_NAME: &str = "debian-13-nocloud.qcow2";
 pub struct InitCmd {}
 
 impl InitCmd {
-    pub fn run(self, cfg: &crate::KrunaiConfig) {
-        println!("Initializing VM template...");
+    pub fn run(self, cfg: &crate::KrunaiConfig, verbose: bool) {
+        crate::vprintln!(verbose, "Initializing VM template...");
 
         // Get configuration directory
         let config_dir = config::get_config_dir().unwrap_or_else(|e| {
@@ -45,8 +45,8 @@ impl InitCmd {
 
         // Download the base image
         println!("\nDownloading Debian base image...");
-        println!("URL: {}", DEBIAN_IMAGE_URL);
-        println!("Destination: {}", template_path.display());
+        crate::vprintln!(verbose, "URL: {}", DEBIAN_IMAGE_URL);
+        crate::vprintln!(verbose, "Destination: {}", template_path.display());
 
         let status = Command::new("curl")
             .arg("-L")
@@ -157,7 +157,7 @@ sync
 echo "KRUNAIDONE"
 "#;
 
-        println!("\nStarting VM with serial console...");
+        crate::vprintln!(verbose, "\nStarting VM with serial console...");
 
         // Create pipes for stdin and stdout
         let mut stdin_pipe: [libc::c_int; 2] = [0; 2];
@@ -217,13 +217,13 @@ echo "KRUNAIDONE"
         let mut reader = BufReader::new(vm_stdout);
 
         // Wait for VM to boot and get a shell prompt
-        println!("Waiting for VM to boot...");
+        crate::vprintln!(verbose, "Waiting for VM to boot...");
 
         // Read any initial output
         let mut buf = [0; 1];
         let _ = reader.read(&mut buf);
 
-        println!("\nWriting setup script to VM...");
+        crate::vprintln!(verbose, "\nWriting setup script to VM...");
 
         // Create the script using cat with heredoc
         writeln!(vm_stdin, "cat > /.krunai-setup.sh << 'EOFSCRIPT'").ok();
@@ -232,7 +232,7 @@ echo "KRUNAIDONE"
 
         writeln!(vm_stdin, "chmod +x /.krunai-setup.sh").ok();
 
-        println!("\nExecuting setup script...");
+        crate::vprintln!(verbose, "\nExecuting setup script...");
         writeln!(vm_stdin, "/.krunai-setup.sh").ok();
 
         loop {
@@ -241,7 +241,7 @@ echo "KRUNAIDONE"
                 if line.contains("KRUNAIDONE") {
                     break;
                 }
-                print!("VM: {}", line);
+                crate::vprint!(verbose, "VM: {}", line);
             }
             line.clear();
         }

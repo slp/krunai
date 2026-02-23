@@ -11,7 +11,10 @@ use std::io::{Error, ErrorKind};
 #[cfg(target_os = "macos")]
 use std::os::unix::ffi::OsStringExt;
 
-use crate::commands::{CloneCmd, ConnectCmd, CreateCmd, DeleteCmd, ExportCmd, ImportCmd, InitCmd, ListCmd, StartCmd, StopCmd};
+use crate::commands::{
+    CloneCmd, ConnectCmd, CreateCmd, DeleteCmd, ExportCmd, ImportCmd, InitCmd, ListCmd, StartCmd,
+    StopCmd,
+};
 use clap::{Parser, Subcommand};
 #[cfg(target_os = "macos")]
 use nix::unistd::execve;
@@ -23,6 +26,7 @@ mod config;
 mod gvproxy;
 mod krun;
 mod network_proxy;
+mod output;
 #[cfg(target_os = "linux")]
 mod passt;
 mod utils;
@@ -58,9 +62,9 @@ impl Default for KrunaiConfig {
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 struct Cli {
-    /// Sets the level of verbosity
-    #[arg(short)]
-    verbosity: Option<u8>, //TODO: implement or remove this
+    /// Enable verbose output
+    #[arg(short, long, global = true)]
+    verbose: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -144,16 +148,17 @@ fn main() {
     });
     let cli_args = Cli::parse();
 
+    let verbose = cli_args.verbose;
     match cli_args.command {
-        Command::Clone(cmd) => cmd.run(&mut cfg),
-        Command::Connect(cmd) => cmd.run(&cfg),
-        Command::Create(cmd) => cmd.run(&mut cfg),
-        Command::Delete(cmd) => cmd.run(&mut cfg),
-        Command::Export(cmd) => cmd.run(&cfg),
-        Command::Import(cmd) => cmd.run(&mut cfg),
-        Command::Init(cmd) => cmd.run(&cfg),
-        Command::List(cmd) => cmd.run(&cfg),
-        Command::Start(cmd) => cmd.run(&cfg),
-        Command::Stop(cmd) => cmd.run(&cfg),
+        Command::Clone(cmd) => cmd.run(&mut cfg, verbose),
+        Command::Connect(cmd) => cmd.run(&cfg, verbose),
+        Command::Create(cmd) => cmd.run(&mut cfg, verbose),
+        Command::Delete(cmd) => cmd.run(&mut cfg, verbose),
+        Command::Export(cmd) => cmd.run(&cfg, verbose),
+        Command::Import(cmd) => cmd.run(&mut cfg, verbose),
+        Command::Init(cmd) => cmd.run(&cfg, verbose),
+        Command::List(cmd) => cmd.run(&cfg, verbose),
+        Command::Start(cmd) => cmd.run(&cfg, verbose),
+        Command::Stop(cmd) => cmd.run(&cfg, verbose),
     }
 }

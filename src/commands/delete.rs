@@ -21,7 +21,7 @@ pub struct DeleteCmd {
 }
 
 impl DeleteCmd {
-    pub fn run(self, cfg: &mut KrunaiConfig) {
+    pub fn run(self, cfg: &mut KrunaiConfig, verbose: bool) {
         let name = self.name;
 
         // Check if VM exists
@@ -42,7 +42,11 @@ impl DeleteCmd {
 
         // Ask for confirmation unless --force is used
         if !self.force {
-            println!("Are you sure you want to delete VM '{}'? (y/N)", name);
+            crate::vprintln!(
+                verbose,
+                "Are you sure you want to delete VM '{}'? (y/N)",
+                name
+            );
             use std::io::{self, BufRead};
             let stdin = io::stdin();
             let mut lines = stdin.lock().lines();
@@ -50,22 +54,24 @@ impl DeleteCmd {
             if let Some(Ok(line)) = lines.next() {
                 let response = line.trim().to_lowercase();
                 if response != "y" && response != "yes" {
-                    println!("Deletion cancelled");
+                    crate::vprintln!(verbose, "Deletion cancelled");
                     return;
                 }
             } else {
-                println!("Deletion cancelled");
+                crate::vprintln!(verbose, "Deletion cancelled");
                 return;
             }
         }
 
-        println!("Deleting VM '{}'...", name);
+        crate::vprintln!(verbose, "Deleting VM '{}'...", name);
 
         // Delete the entire VM directory
         if let Ok(vm_dir) = config::get_vm_dir(&name) {
             if vm_dir.exists() {
                 match fs::remove_dir_all(&vm_dir) {
-                    Ok(_) => println!("Deleted VM directory: {}", vm_dir.display()),
+                    Ok(_) => {
+                        crate::vprintln!(verbose, "Deleted VM directory: {}", vm_dir.display())
+                    }
                     Err(e) => {
                         eprintln!("Warning: Failed to delete VM directory: {}", e);
                         eprintln!("Attempting to clean up individual files...");
@@ -101,6 +107,6 @@ impl DeleteCmd {
             std::process::exit(-1);
         });
 
-        println!("\nVM '{}' successfully deleted", name);
+        crate::vprintln!(verbose, "\nVM '{}' successfully deleted", name);
     }
 }

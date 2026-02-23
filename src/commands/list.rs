@@ -16,7 +16,7 @@ pub struct ListCmd {
 }
 
 impl ListCmd {
-    pub fn run(self, cfg: &KrunaiConfig) {
+    pub fn run(self, cfg: &KrunaiConfig, _verbose: bool) {
         if cfg.vmconfig_map.is_empty() {
             println!("No VMs found");
             println!("\nUse 'krunai create <name>' to create a new VM");
@@ -38,10 +38,7 @@ impl ListCmd {
 
         // Print header
         if self.verbose {
-            println!(
-                "\n{:<20} {:<15} {:<10} SSH PORT",
-                "NAME", "STATUS", "PID"
-            );
+            println!("\n{:<20} {:<15} {:<10} SSH PORT", "NAME", "STATUS", "PID");
             println!("{}", "-".repeat(70));
         } else {
             println!("\n{:<20} {:<15} SSH PORT", "NAME", "STATUS");

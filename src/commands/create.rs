@@ -284,12 +284,10 @@ fn generate_ssh_keys(vm_name: &str) -> std::io::Result<()> {
         })?;
 
     if !output.status.success() {
-        return Err(std::io::Error::other(
-            format!(
-                "ssh-keygen failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ),
-        ));
+        return Err(std::io::Error::other(format!(
+            "ssh-keygen failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
     }
 
     // Set restrictive permissions on private key (600)
@@ -338,8 +336,13 @@ fn test_ssh_connection(_vm_name: &str, ssh_port: &str, ssh_key_path: &Path) -> b
 }
 
 /// Attempt to connect to VM via SSH with retries
-fn wait_for_ssh_connectivity(vm_name: &str, ssh_port: &str, ssh_key_path: &Path) -> bool {
-    println!("Waiting for VM to be accessible via SSH...");
+fn wait_for_ssh_connectivity(
+    vm_name: &str,
+    ssh_port: &str,
+    ssh_key_path: &Path,
+    verbose: bool,
+) -> bool {
+    crate::vprintln!(verbose, "Waiting for VM to be accessible via SSH...");
 
     for attempt in 1..=SSH_CONNECT_RETRIES {
         std::io::Write::flush(&mut std::io::stdout()).ok();
@@ -357,7 +360,7 @@ fn wait_for_ssh_connectivity(vm_name: &str, ssh_port: &str, ssh_key_path: &Path)
 }
 
 /// Copy the disk template to the VM's directory
-fn copy_disk_template(vm_name: &str) -> std::io::Result<String> {
+fn copy_disk_template(vm_name: &str, verbose: bool) -> std::io::Result<String> {
     // Get template path from config directory
     let config_dir = config::get_config_dir()?;
     let template_path = config_dir.join(TEMPLATE_DISK_NAME);
@@ -379,7 +382,8 @@ fn copy_disk_template(vm_name: &str) -> std::io::Result<String> {
     // Get VM's disk path
     let dest_path = config::get_vm_disk_path(vm_name)?;
 
-    println!(
+    crate::vprintln!(
+        verbose,
         "Copying template from {} to {}",
         template_path.display(),
         dest_path.display()
@@ -419,12 +423,12 @@ pub struct CreateCmd {
 }
 
 impl CreateCmd {
-    pub fn run(self, cfg: &mut KrunaiConfig) {
+    pub fn run(self, cfg: &mut KrunaiConfig, verbose: bool) {
         let mut mapped_ports = port_pairs_to_hash_map(self.ports);
         let name = self.name;
 
         if cfg.vmconfig_map.contains_key(&name) {
-            println!("A VM with this name already exists");
+            eprintln!("A VM with this name already exists");
             std::process::exit(-1);
         }
 
@@ -432,7 +436,11 @@ impl CreateCmd {
         if !has_ssh_port_mapping(&mapped_ports) {
             match find_available_ssh_port(cfg) {
                 Some(ssh_port) => {
-                    println!("Automatically assigning SSH port: {} -> 22", ssh_port);
+                    crate::vprintln!(
+                        verbose,
+                        "Automatically assigning SSH port: {} -> 22",
+                        ssh_port
+                    );
                     mapped_ports.insert(ssh_port.to_string(), "22".to_string());
                 }
                 None => {
@@ -443,7 +451,7 @@ impl CreateCmd {
         }
 
         // Copy disk template to VM's volume directory
-        let disk_path = copy_disk_template(&name).unwrap_or_else(|e| {
+        let disk_path = copy_disk_template(&name, verbose).unwrap_or_else(|e| {
             eprintln!("Error copying disk template: {}", e);
             std::process::exit(-1);
         });
@@ -478,10 +486,10 @@ impl CreateCmd {
         let cwd = env::current_dir().unwrap();
         let workdir = cwd.to_str();
         if let Some(workdir) = workdir {
-            println!("Sharing '{workdir}' with '{name}'");
+            crate::vprintln!(verbose, "Sharing '{workdir}' with '{name}'");
         }
 
-        println!("Starting VM '{}'...", name);
+        crate::vprintln!(verbose, "Starting VM '{}'...", name);
 
         // Create lockfile
         create_lockfile(&name).unwrap_or_else(|e| {
@@ -528,7 +536,7 @@ impl CreateCmd {
             // Get SSH key path for testing
             if let Ok(ssh_key_path) = config::get_vm_ssh_key_path(&name) {
                 // Test SSH connectivity
-                wait_for_ssh_connectivity(&name, host_port, &ssh_key_path)
+                wait_for_ssh_connectivity(&name, host_port, &ssh_key_path, verbose)
             } else {
                 false
             }
@@ -574,7 +582,7 @@ impl CreateCmd {
                 if let Ok(ssh_key_path) = config::get_vm_ssh_key_path(&name) {
                     if let Some(ref script) = self.script {
                         // Execute the specified command
-                        println!("Executing command in VM: {}\n", script);
+                        crate::vprintln!(verbose, "Executing command in VM: {}\n", script);
                         let script = format!("./{script}");
 
                         let status = Command::new("ssh")
@@ -616,9 +624,7 @@ impl CreateCmd {
                             "=================================================================="
                         );
                         println!("             *** Install now your AI agent ***\n");
-                        println!(
-                            "You can also install additional development tools using \"sudo apt\"\n"
-                        );
+                        println!("You can also install additional development tools using \"sudo apt\"\n");
                         println!(
                             "(Type 'exit' or press Ctrl+D to close the session and save the VM)"
                         );
@@ -679,7 +685,7 @@ impl CreateCmd {
                 .find(|(_, gp)| gp.as_str() == "22")
             {
                 if let Ok(ssh_key_path) = config::get_vm_ssh_key_path(&name) {
-                    println!("\nShutting down VM...");
+                    crate::vprintln!(verbose, "\nShutting down VM...");
                     let _ = Command::new("ssh")
                         .arg("-i")
                         .arg(&ssh_key_path)
@@ -704,22 +710,22 @@ impl CreateCmd {
         }
 
         // Wait for the VM to stop running
-        println!("\nWaiting for VM to shut down...");
+        crate::vprintln!(verbose, "\nWaiting for VM to shut down...");
 
         // Read PID from lockfile
         let lockfile_path = config::get_vm_dir(&name).unwrap().join("vm.lock");
         if let Ok(content) = fs::read_to_string(&lockfile_path) {
             if let Ok(pid) = content.trim().parse::<i32>() {
                 if wait_for_process_exit(pid, 30) {
-                    println!("VM shut down successfully");
+                    crate::vprintln!(verbose, "VM shut down successfully");
                 } else {
-                    println!("Warning: VM did not shut down within 30 seconds");
+                    crate::vprintln!(verbose, "Warning: VM did not shut down within 30 seconds");
                 }
             } else {
-                println!("Warning: Could not parse PID from lockfile");
+                crate::vprintln!(verbose, "Warning: Could not parse PID from lockfile");
             }
         } else {
-            println!("Warning: Could not read lockfile");
+            crate::vprintln!(verbose, "Warning: Could not read lockfile");
         }
 
         // Clean up lockfile

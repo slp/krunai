@@ -89,7 +89,8 @@ mount -t virtiofs work /home/agent/work
 
 echo "==> Starting SSH daemon in foreground..."
 /usr/sbin/sshd -D
-"#.to_string();
+"#
+    .to_string();
 
     // Write the script
     let mut file = File::create(&script_path)?;
@@ -232,7 +233,7 @@ pub struct StartCmd {
 }
 
 impl StartCmd {
-    pub fn run(self, cfg: &KrunaiConfig) {
+    pub fn run(self, cfg: &KrunaiConfig, verbose: bool) {
         let name = self.name;
         let connect = self.connect;
         let force = self.force;
@@ -249,11 +250,18 @@ impl StartCmd {
         // Check if VM is already running
         if utils::is_vm_running(&name) {
             if force {
-                println!("VM '{}' is already running, forcing restart...", name);
-                stop_running_vm(&name, &vmcfg);
+                crate::vprintln!(
+                    verbose,
+                    "VM '{}' is already running, forcing restart...",
+                    name
+                );
+                stop_running_vm(&name, &vmcfg, verbose);
             } else {
                 eprintln!("Error: VM '{}' is already running", name);
-                eprintln!("Use 'krunai stop {}' to stop it first, or use --force to restart", name);
+                eprintln!(
+                    "Use 'krunai stop {}' to stop it first, or use --force to restart",
+                    name
+                );
                 std::process::exit(-1);
             }
         }
@@ -277,8 +285,11 @@ impl StartCmd {
                     if let Ok(ssh_key_path) = config::get_vm_ssh_key_path(&name) {
                         thread::sleep(Duration::from_millis(200));
                         if wait_for_ssh_connectivity(&name, host_port, &ssh_key_path) {
-                            println!("\nOpening interactive SSH session...");
-                            println!("(Type 'exit' or press Ctrl+D to close the session)\n");
+                            crate::vprintln!(verbose, "\nOpening interactive SSH session...");
+                            crate::vprintln!(
+                                verbose,
+                                "(Type 'exit' or press Ctrl+D to close the session)\n"
+                            );
 
                             let _ = Command::new("ssh")
                                 .arg("-i")
@@ -294,7 +305,10 @@ impl StartCmd {
                                 .arg("agent@localhost")
                                 .status();
                         } else {
-                            println!("\n✗ Warning: Could not verify SSH connectivity");
+                            crate::vprintln!(
+                                verbose,
+                                "\n✗ Warning: Could not verify SSH connectivity"
+                            );
                         }
                     }
                 }
@@ -309,7 +323,7 @@ impl StartCmd {
             std::process::exit(-1);
         }
 
-        println!("Starting VM '{}'...", name);
+        crate::vprintln!(verbose, "Starting VM '{}'...", name);
 
         // Generate startup script
         let _ = generate_startup_script(&name).unwrap_or_else(|e| {
@@ -320,7 +334,7 @@ impl StartCmd {
         let cwd = env::current_dir().unwrap();
         let workdir = cwd.to_str();
         if let Some(workdir) = workdir {
-            println!("Sharing '{workdir}' with '{name}'");
+            crate::vprintln!(verbose, "Sharing '{workdir}' with '{name}'");
         }
 
         // Clone data for port forwarding setup
@@ -343,7 +357,7 @@ impl StartCmd {
         // Parent process continues to start the VM
 
         // Always daemonize
-        daemonize(&name).unwrap_or_else(|e| {
+        daemonize(&name, verbose).unwrap_or_else(|e| {
             eprintln!("Failed to daemonize: {}", e);
             std::process::exit(-1);
         });
@@ -402,7 +416,7 @@ pub fn check_and_create_lockfile(vm_name: &str) -> std::io::Result<()> {
 }
 
 /// Daemonize the process
-pub fn daemonize(vm_name: &str) -> std::io::Result<()> {
+pub fn daemonize(vm_name: &str, verbose: bool) -> std::io::Result<()> {
     // First fork
     let pid = unsafe { libc::fork() };
     if pid < 0 {
@@ -410,7 +424,12 @@ pub fn daemonize(vm_name: &str) -> std::io::Result<()> {
     }
     if pid > 0 {
         // Parent process - print info and exit
-        println!("VM '{}' started in background with PID {}", vm_name, pid);
+        crate::vprintln!(
+            verbose,
+            "VM '{}' started in background with PID {}",
+            vm_name,
+            pid
+        );
         std::process::exit(0);
     }
 
@@ -480,7 +499,7 @@ pub fn set_rlimits() {
 }
 
 /// Gracefully stop a running VM
-fn stop_running_vm(vm_name: &str, vmcfg: &crate::VmConfig) {
+fn stop_running_vm(vm_name: &str, vmcfg: &crate::VmConfig, verbose: bool) {
     // Get the PID from the VM
     let pid = match utils::get_vm_pid(vm_name) {
         Some(pid) => pid,
@@ -491,7 +510,7 @@ fn stop_running_vm(vm_name: &str, vmcfg: &crate::VmConfig) {
         }
     };
 
-    println!("Stopping VM '{}' (PID {})...", vm_name, pid);
+    crate::vprintln!(verbose, "Stopping VM '{}' (PID {})...", vm_name, pid);
 
     // Find SSH port
     let ssh_port = vmcfg
@@ -520,16 +539,19 @@ fn stop_running_vm(vm_name: &str, vmcfg: &crate::VmConfig) {
     };
 
     // Issue poweroff command via SSH
-    println!("Issuing poweroff command via SSH...");
+    crate::vprintln!(verbose, "Issuing poweroff command via SSH...");
     let timeout_secs = 10;
     match utils::poweroff_vm_via_ssh(&ssh_key_path, ssh_port, pid, timeout_secs) {
         Ok(true) => {
-            println!("VM stopped gracefully");
+            crate::vprintln!(verbose, "VM stopped gracefully");
             let _ = utils::remove_lockfile(vm_name);
         }
         Ok(false) => {
             eprintln!("Error: VM did not stop within {} seconds", timeout_secs);
-            eprintln!("Please stop the VM manually with: krunai stop --force {}", vm_name);
+            eprintln!(
+                "Please stop the VM manually with: krunai stop --force {}",
+                vm_name
+            );
             std::process::exit(-1);
         }
         Err(e) => {

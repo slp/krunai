@@ -28,7 +28,7 @@ pub struct ConnectCmd {
 }
 
 impl ConnectCmd {
-    pub fn run(self, cfg: &KrunaiConfig) {
+    pub fn run(self, cfg: &KrunaiConfig, _verbose: bool) {
         let name = self.name;
 
         // Check if VM exists

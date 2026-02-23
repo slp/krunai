@@ -143,7 +143,7 @@ pub fn poweroff_vm_via_ssh(
     timeout_secs: u64,
 ) -> std::io::Result<bool> {
     // Issue poweroff command via SSH
-    let _status = Command::new("ssh")
+    let _output = Command::new("ssh")
         .arg("-i")
         .arg(ssh_key_path)
         .arg("-p")
@@ -162,7 +162,7 @@ pub fn poweroff_vm_via_ssh(
         .arg("sudo")
         .arg("poweroff")
         .arg("-f")
-        .status()?;
+        .output()?;
 
     // Wait for process to exit
     let check_interval = Duration::from_millis(100);

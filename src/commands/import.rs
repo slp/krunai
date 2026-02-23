@@ -23,7 +23,7 @@ pub struct ImportCmd {
 }
 
 impl ImportCmd {
-    pub fn run(self, cfg: &mut KrunaiConfig) {
+    pub fn run(self, cfg: &mut KrunaiConfig, verbose: bool) {
         let input_path = self.input;
         let name = self.name;
 
@@ -39,10 +39,17 @@ impl ImportCmd {
             std::process::exit(-1);
         }
 
-        println!("Importing VM from '{}' as '{}'...", input_path, name);
+        crate::vprintln!(
+            verbose,
+            "Importing VM from '{}' as '{}'...",
+            input_path,
+            name
+        );
 
         // Create a temporary directory for extracting the tarball
-        let temp_dir = match std::env::temp_dir().join(format!("krunai-import-{}", name)).to_str()
+        let temp_dir = match std::env::temp_dir()
+            .join(format!("krunai-import-{}", name))
+            .to_str()
         {
             Some(path) => path.to_string(),
             None => {
@@ -61,7 +68,7 @@ impl ImportCmd {
         }
 
         // Extract tarball
-        println!("Extracting tarball...");
+        crate::vprintln!(verbose, "Extracting tarball...");
         let tar_result = Command::new("tar")
             .arg("-xzf")
             .arg(&input_path)
@@ -158,7 +165,7 @@ impl ImportCmd {
             }
         };
 
-        println!("Copying disk file...");
+        crate::vprintln!(verbose, "Copying disk file...");
         if let Err(e) = fs::copy(&disk_file, &dest_disk_path) {
             eprintln!("Error copying disk file: {}", e);
             let _ = fs::remove_dir_all(&temp_dir);
@@ -187,7 +194,8 @@ impl ImportCmd {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                if let Err(e) = fs::set_permissions(&dest_ssh_key, fs::Permissions::from_mode(0o600))
+                if let Err(e) =
+                    fs::set_permissions(&dest_ssh_key, fs::Permissions::from_mode(0o600))
                 {
                     eprintln!("Warning: Failed to set SSH key permissions: {}", e);
                 }
@@ -235,7 +243,7 @@ impl ImportCmd {
         // Find a new available SSH port for the imported VM
         let new_ssh_port = match utils::find_available_ssh_port(cfg) {
             Some(port) => {
-                println!("Assigning new SSH port: {} -> 22", port);
+                crate::vprintln!(verbose, "Assigning new SSH port: {} -> 22", port);
                 port
             }
             None => {
@@ -257,6 +265,6 @@ impl ImportCmd {
             std::process::exit(-1);
         }
 
-        println!("VM '{}' successfully imported", name);
+        crate::vprintln!(verbose, "VM '{}' successfully imported", name);
     }
 }

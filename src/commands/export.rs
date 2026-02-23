@@ -21,7 +21,7 @@ pub struct ExportCmd {
 }
 
 impl ExportCmd {
-    pub fn run(self, cfg: &KrunaiConfig) {
+    pub fn run(self, cfg: &KrunaiConfig, verbose: bool) {
         let name = self.name;
         let output_path = self.output;
 
@@ -41,10 +41,12 @@ impl ExportCmd {
             std::process::exit(-1);
         }
 
-        println!("Exporting VM '{}' to '{}'...", name, output_path);
+        crate::vprintln!(verbose, "Exporting VM '{}' to '{}'...", name, output_path);
 
         // Create a temporary directory for staging the export
-        let temp_dir = match std::env::temp_dir().join(format!("krunai-export-{}", name)).to_str()
+        let temp_dir = match std::env::temp_dir()
+            .join(format!("krunai-export-{}", name))
+            .to_str()
         {
             Some(path) => path.to_string(),
             None => {
@@ -94,7 +96,7 @@ impl ExportCmd {
             .unwrap_or("disk.qcow2");
         let temp_disk_path = Path::new(&temp_dir).join(disk_filename);
 
-        println!("Copying disk file...");
+        crate::vprintln!(verbose, "Copying disk file...");
         if let Err(e) = fs::copy(disk_path, &temp_disk_path) {
             eprintln!("Error copying disk file: {}", e);
             let _ = fs::remove_dir_all(&temp_dir);
@@ -144,7 +146,7 @@ impl ExportCmd {
         }
 
         // Create tarball
-        println!("Creating tarball...");
+        crate::vprintln!(verbose, "Creating tarball...");
         let tar_result = Command::new("tar")
             .arg("-czf")
             .arg(&output_path)
@@ -159,7 +161,12 @@ impl ExportCmd {
         match tar_result {
             Ok(status) => {
                 if status.success() {
-                    println!("VM '{}' successfully exported to '{}'", name, output_path);
+                    crate::vprintln!(
+                        verbose,
+                        "VM '{}' successfully exported to '{}'",
+                        name,
+                        output_path
+                    );
                 } else {
                     eprintln!("Error: tar command failed");
                     std::process::exit(-1);

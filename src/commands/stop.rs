@@ -24,7 +24,7 @@ pub struct StopCmd {
 }
 
 impl StopCmd {
-    pub fn run(self, cfg: &KrunaiConfig) {
+    pub fn run(self, cfg: &KrunaiConfig, verbose: bool) {
         let name = self.name;
 
         // Check if VM exists in configuration
@@ -47,7 +47,7 @@ impl StopCmd {
 
         // Check if VM is running
         if !lockfile_path.exists() {
-            println!("VM '{}' is not running", name);
+            crate::vprintln!(verbose, "VM '{}' is not running", name);
             return;
         }
 
@@ -68,19 +68,23 @@ impl StopCmd {
 
         // Check if process is actually running
         if !utils::is_process_running(pid) {
-            println!("VM '{}' process is not running (stale lockfile)", name);
-            println!("Cleaning up lockfile...");
+            crate::vprintln!(
+                verbose,
+                "VM '{}' process is not running (stale lockfile)",
+                name
+            );
+            crate::vprintln!(verbose, "Cleaning up lockfile...");
             let _ = fs::remove_file(&lockfile_path);
             return;
         }
 
-        println!("Stopping VM '{}' (PID {})...", name, pid);
+        crate::vprintln!(verbose, "Stopping VM '{}' (PID {})...", name, pid);
 
         // Try graceful shutdown first
         if self.force {
             // Force kill immediately
             if kill_process(pid, libc::SIGKILL) {
-                println!("VM '{}' force killed", name);
+                crate::vprintln!(verbose, "VM '{}' force killed", name);
             } else {
                 eprintln!("Error: Failed to kill VM process");
                 std::process::exit(-1);
@@ -100,7 +104,7 @@ impl StopCmd {
                     eprintln!("Error getting SSH key path: {}", e);
                     eprintln!("Falling back to force kill...");
                     if kill_process(pid, libc::SIGKILL) {
-                        println!("VM '{}' force killed", name);
+                        crate::vprintln!(verbose, "VM '{}' force killed", name);
                     } else {
                         eprintln!("Error: Failed to kill VM process");
                         std::process::exit(-1);
@@ -115,15 +119,15 @@ impl StopCmd {
 
             // Try SSH poweroff if SSH port is available
             if let Some(port) = ssh_port {
-                println!("Issuing poweroff command via SSH...");
+                crate::vprintln!(verbose, "Issuing poweroff command via SSH...");
 
                 match utils::poweroff_vm_via_ssh(&ssh_key_path, port, pid, self.timeout) {
                     Ok(true) => {
-                        println!("VM '{}' stopped gracefully", name);
+                        crate::vprintln!(verbose, "VM '{}' stopped gracefully", name);
                     }
                     Ok(false) => {
                         eprintln!("VM did not stop within {} seconds", self.timeout);
-                        println!("Use --force to kill immediately");
+                        eprintln!("Use --force to kill immediately");
                         std::process::exit(-1);
                     }
                     Err(e) => {

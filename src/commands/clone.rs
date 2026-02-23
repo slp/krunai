@@ -24,7 +24,7 @@ pub struct CloneCmd {
 }
 
 impl CloneCmd {
-    pub fn run(self, cfg: &mut KrunaiConfig) {
+    pub fn run(self, cfg: &mut KrunaiConfig, verbose: bool) {
         let source_name = self.source;
         let dest_name = self.destination;
 
@@ -53,9 +53,11 @@ impl CloneCmd {
             std::process::exit(-1);
         }
 
-        println!(
+        crate::vprintln!(
+            verbose,
             "Cloning VM '{}' to '{}'...",
-            source_name, dest_name
+            source_name,
+            dest_name
         );
 
         // Ensure destination VM directory structure exists
@@ -74,10 +76,7 @@ impl CloneCmd {
         };
 
         if !source_disk_path.exists() {
-            eprintln!(
-                "Source disk not found at: {}",
-                source_disk_path.display()
-            );
+            eprintln!("Source disk not found at: {}", source_disk_path.display());
             std::process::exit(-1);
         }
 
@@ -89,7 +88,8 @@ impl CloneCmd {
             }
         };
 
-        println!(
+        crate::vprintln!(
+            verbose,
             "Copying disk from {} to {}...",
             source_disk_path.display(),
             dest_disk_path.display()
@@ -101,7 +101,7 @@ impl CloneCmd {
         }
 
         // Generate SSH keys for the new VM
-        if let Err(e) = generate_ssh_keys(&dest_name) {
+        if let Err(e) = generate_ssh_keys(&dest_name, verbose) {
             eprintln!("Error generating SSH keys: {}", e);
             // Clean up on error
             let _ = config::get_vm_dir(&dest_name).and_then(|dir| fs::remove_dir_all(&dir));
@@ -128,7 +128,7 @@ impl CloneCmd {
         // Find a new available SSH port for the cloned VM
         let new_ssh_port = match utils::find_available_ssh_port(cfg) {
             Some(port) => {
-                println!("Assigning new SSH port: {} -> 22", port);
+                crate::vprintln!(verbose, "Assigning new SSH port: {} -> 22", port);
                 port
             }
             None => {
@@ -151,25 +151,31 @@ impl CloneCmd {
         };
 
         // Save configuration
-        cfg.vmconfig_map.insert(dest_name.clone(), dest_vmcfg.clone());
+        cfg.vmconfig_map
+            .insert(dest_name.clone(), dest_vmcfg.clone());
         if let Err(e) = config::save_config(cfg) {
             eprintln!("Error saving configuration: {}", e);
             std::process::exit(-1);
         }
 
         // Update SSH keys in the cloned VM
-        if let Err(e) = update_vm_ssh_keys(&source_name, &dest_name, &dest_vmcfg) {
+        if let Err(e) = update_vm_ssh_keys(&source_name, &dest_name, &dest_vmcfg, verbose) {
             eprintln!("Error updating SSH keys in cloned VM: {}", e);
             eprintln!("The VM was cloned but you may need to manually update the SSH keys");
             std::process::exit(-1);
         }
 
-        println!("VM '{}' successfully cloned to '{}'", source_name, dest_name);
+        crate::vprintln!(
+            verbose,
+            "VM '{}' successfully cloned to '{}'",
+            source_name,
+            dest_name
+        );
     }
 }
 
 /// Generate SSH key pair for a VM
-fn generate_ssh_keys(vm_name: &str) -> std::io::Result<()> {
+fn generate_ssh_keys(vm_name: &str, verbose: bool) -> std::io::Result<()> {
     let ssh_key_path = config::get_vm_ssh_key_path(vm_name)?;
 
     // Check if key already exists
@@ -177,7 +183,7 @@ fn generate_ssh_keys(vm_name: &str) -> std::io::Result<()> {
         return Ok(());
     }
 
-    println!("Generating SSH key pair for '{}'...", vm_name);
+    crate::vprintln!(verbose, "Generating SSH key pair for '{}'...", vm_name);
 
     // Generate SSH key pair using ssh-keygen
     let output = Command::new("ssh-keygen")
@@ -206,8 +212,9 @@ fn update_vm_ssh_keys(
     source_name: &str,
     dest_name: &str,
     dest_vmcfg: &crate::VmConfig,
+    verbose: bool,
 ) -> std::io::Result<()> {
-    println!("Updating SSH keys in cloned VM...");
+    crate::vprintln!(verbose, "Updating SSH keys in cloned VM...");
 
     // Get SSH port
     let ssh_port = dest_vmcfg
@@ -224,7 +231,6 @@ fn update_vm_ssh_keys(
     let dest_ssh_key = config::get_vm_ssh_key_path(dest_name)?;
     let dest_ssh_pubkey = config::get_vm_ssh_pubkey_path(dest_name)?;
 
-
     // Read the new public key
     let new_pubkey = fs::read_to_string(&dest_ssh_pubkey)?;
 
@@ -236,7 +242,7 @@ fn update_vm_ssh_keys(
         )));
     }
 
-    println!("Starting VM '{}'...", dest_name);
+    crate::vprintln!(verbose, "Starting VM '{}'...", dest_name);
 
     // Generate startup script
     start::generate_startup_script(dest_name)?;
@@ -259,7 +265,7 @@ fn update_vm_ssh_keys(
         // Child process - will start the VM
 
         // Daemonize the VM process
-        if let Err(e) = start::daemonize(&name_for_vm) {
+        if let Err(e) = start::daemonize(&name_for_vm, false) {
             eprintln!("Failed to daemonize: {}", e);
             std::process::exit(-1);
         }
@@ -267,7 +273,16 @@ fn update_vm_ssh_keys(
         start::set_rlimits();
 
         // Execute the VM
-        unsafe { exec_vm(&vmcfg_for_vm, false, "startup.sh", workdir, Vec::new(), Vec::new()) };
+        unsafe {
+            exec_vm(
+                &vmcfg_for_vm,
+                false,
+                "startup.sh",
+                workdir,
+                Vec::new(),
+                Vec::new(),
+            )
+        };
 
         // Clean up lockfile if exec_vm returns (shouldn't happen)
         let _ = utils::remove_lockfile(&name_for_vm);
@@ -277,20 +292,18 @@ fn update_vm_ssh_keys(
     // Parent process continues - wait for SSH and update keys
 
     // Wait for SSH to be ready
-    println!("Waiting for SSH to be ready...");
+    crate::vprintln!(verbose, "Waiting for SSH to be ready...");
     if !start::wait_for_ssh_connectivity(dest_name, ssh_port, &source_ssh_key) {
         // SSH not ready, kill the VM and clean up
         unsafe {
             libc::kill(vm_pid, libc::SIGKILL);
         }
         let _ = utils::remove_lockfile(dest_name);
-        return Err(std::io::Error::other(
-            "SSH connection to cloned VM failed",
-        ));
+        return Err(std::io::Error::other("SSH connection to cloned VM failed"));
     }
 
     // Update authorized_keys with the new public key
-    println!("Updating authorized_keys with new SSH key...");
+    crate::vprintln!(verbose, "Updating authorized_keys with new SSH key...");
     let update_result = Command::new("ssh")
         .arg("-i")
         .arg(&source_ssh_key)
@@ -321,7 +334,7 @@ fn update_vm_ssh_keys(
     }
 
     // Stop the VM gracefully via SSH
-    println!("Stopping VM '{}'...", dest_name);
+    crate::vprintln!(verbose, "Stopping VM '{}'...", dest_name);
     match utils::poweroff_vm_via_ssh(&dest_ssh_key, ssh_port, vm_pid, 10) {
         Ok(true) => {
             // VM stopped gracefully
@@ -329,7 +342,7 @@ fn update_vm_ssh_keys(
         }
         Ok(false) => {
             // VM didn't stop within timeout, force kill
-            println!("VM did not stop gracefully, force killing...");
+            crate::vprintln!(verbose, "VM did not stop gracefully, force killing...");
             unsafe {
                 libc::kill(vm_pid, libc::SIGKILL);
             }
@@ -337,7 +350,7 @@ fn update_vm_ssh_keys(
         }
         Err(_) => {
             // SSH command failed, force kill
-            println!("SSH poweroff failed, force killing...");
+            crate::vprintln!(verbose, "SSH poweroff failed, force killing...");
             unsafe {
                 libc::kill(vm_pid, libc::SIGKILL);
             }
@@ -345,6 +358,6 @@ fn update_vm_ssh_keys(
         }
     }
 
-    println!("SSH keys updated successfully");
+    crate::vprintln!(verbose, "SSH keys updated successfully");
     Ok(())
 }
