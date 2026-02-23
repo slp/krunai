@@ -11,7 +11,7 @@ use std::io::{Error, ErrorKind};
 #[cfg(target_os = "macos")]
 use std::os::unix::ffi::OsStringExt;
 
-use crate::commands::{CloneCmd, ConnectCmd, CreateCmd, DeleteCmd, InitCmd, ListCmd, StartCmd, StopCmd};
+use crate::commands::{CloneCmd, ConnectCmd, CreateCmd, DeleteCmd, ExportCmd, ImportCmd, InitCmd, ListCmd, StartCmd, StopCmd};
 use clap::{Parser, Subcommand};
 #[cfg(target_os = "macos")]
 use nix::unistd::execve;
@@ -71,6 +71,8 @@ enum Command {
     Connect(ConnectCmd),
     Create(CreateCmd),
     Delete(DeleteCmd),
+    Export(ExportCmd),
+    Import(ImportCmd),
     Init(InitCmd),
     List(ListCmd),
     Start(StartCmd),
@@ -147,6 +149,8 @@ fn main() {
         Command::Connect(cmd) => cmd.run(&cfg),
         Command::Create(cmd) => cmd.run(&mut cfg),
         Command::Delete(cmd) => cmd.run(&mut cfg),
+        Command::Export(cmd) => cmd.run(&cfg),
+        Command::Import(cmd) => cmd.run(&mut cfg),
         Command::Init(cmd) => cmd.run(&cfg),
         Command::List(cmd) => cmd.run(&cfg),
         Command::Start(cmd) => cmd.run(&cfg),
