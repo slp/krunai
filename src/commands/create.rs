@@ -215,6 +215,10 @@ chown -R agent:{gid} /home/agent/.ssh
 # Allow agent user to use sudo without password
 echo "==> Configuring sudo permissions for 'agent'..."
 echo "agent ALL=(ALL) NOPASSWD: /usr/sbin/poweroff" > /etc/sudoers.d/agent-poweroff
+echo "agent ALL=(ALL) NOPASSWD: /usr/sbin/poweroff" > /etc/sudoers.d/agent-poweroff
+echo "agent ALL=(ALL) NOPASSWD: /usr/bin/apt" > /etc/sudoers.d/agent-apt
+echo "agent ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/agent-apt
+echo "agent ALL=(ALL) NOPASSWD: /usr/bin/apt-cache" >> /etc/sudoers.d/agent-apt
 echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent-all
 chmod 440 /etc/sudoers.d/agent-poweroff
 chmod 440 /etc/sudoers.d/agent-all
