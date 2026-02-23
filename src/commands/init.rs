@@ -129,8 +129,8 @@ echo "==> Updating package lists..."
 apt-get update -qq
 
 # Install openssh-server and sudo
-echo "==> Installing cloud-guest-utils openssh-server and sudo..."
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server sudo cloud-guest-utils
+echo "==> Installing cloud-guest-utils openssh-server, sudo, build-essential and git..."
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server sudo cloud-guest-utils build-essential git
 
 # Resizing partition
 echo "==> Resizing /dev/vda to be as large as possible"
