@@ -11,7 +11,7 @@ use std::io::{Error, ErrorKind};
 #[cfg(target_os = "macos")]
 use std::os::unix::ffi::OsStringExt;
 
-use crate::commands::{ConnectCmd, CreateCmd, DeleteCmd, InitCmd, ListCmd, StartCmd, StopCmd};
+use crate::commands::{CloneCmd, ConnectCmd, CreateCmd, DeleteCmd, InitCmd, ListCmd, StartCmd, StopCmd};
 use clap::{Parser, Subcommand};
 #[cfg(target_os = "macos")]
 use nix::unistd::execve;
@@ -67,6 +67,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    Clone(CloneCmd),
     Connect(ConnectCmd),
     Create(CreateCmd),
     Delete(DeleteCmd),
@@ -142,6 +143,7 @@ fn main() {
     let cli_args = Cli::parse();
 
     match cli_args.command {
+        Command::Clone(cmd) => cmd.run(&mut cfg),
         Command::Connect(cmd) => cmd.run(&cfg),
         Command::Create(cmd) => cmd.run(&mut cfg),
         Command::Delete(cmd) => cmd.run(&mut cfg),

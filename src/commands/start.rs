@@ -54,7 +54,7 @@ fn test_ssh_connection(_vm_name: &str, ssh_port: &str, ssh_key_path: &Path) -> b
 }
 
 /// Attempt to connect to VM via SSH with retries
-fn wait_for_ssh_connectivity(vm_name: &str, ssh_port: &str, ssh_key_path: &Path) -> bool {
+pub fn wait_for_ssh_connectivity(vm_name: &str, ssh_port: &str, ssh_key_path: &Path) -> bool {
     for attempt in 1..=SSH_CONNECT_RETRIES {
         std::io::Write::flush(&mut std::io::stdout()).ok();
 
@@ -71,7 +71,7 @@ fn wait_for_ssh_connectivity(vm_name: &str, ssh_port: &str, ssh_key_path: &Path)
 }
 
 /// Generate startup script that launches sshd in background and user process in foreground
-fn generate_startup_script(vm_name: &str) -> std::io::Result<String> {
+pub fn generate_startup_script(vm_name: &str) -> std::io::Result<String> {
     let script_path = config::get_vm_shared_dir(vm_name)?.join("startup.sh");
     let script_content = r#"#!/bin/bash
 set -e
@@ -111,7 +111,7 @@ echo "==> Starting SSH daemon in foreground..."
 }
 
 /// Set up SSH port forwarding for VM
-fn setup_port_forwarding(vm_name: &str, vmcfg: &crate::VmConfig) {
+pub fn setup_port_forwarding(vm_name: &str, vmcfg: &crate::VmConfig) {
     // Find the SSH port
     let ssh_port = match vmcfg
         .mapped_ports
@@ -343,7 +343,7 @@ impl StartCmd {
 }
 
 /// Check if VM is already running and create lockfile
-fn check_and_create_lockfile(vm_name: &str) -> std::io::Result<()> {
+pub fn check_and_create_lockfile(vm_name: &str) -> std::io::Result<()> {
     let lockfile_path = config::get_vm_dir(vm_name)?.join("vm.lock");
 
     // Try to read existing lockfile
@@ -385,7 +385,7 @@ fn check_and_create_lockfile(vm_name: &str) -> std::io::Result<()> {
 }
 
 /// Daemonize the process
-fn daemonize(vm_name: &str) -> std::io::Result<()> {
+pub fn daemonize(vm_name: &str) -> std::io::Result<()> {
     // First fork
     let pid = unsafe { libc::fork() };
     if pid < 0 {
@@ -443,7 +443,7 @@ fn daemonize(vm_name: &str) -> std::io::Result<()> {
 }
 
 /// Set resource limits
-fn set_rlimits() {
+pub fn set_rlimits() {
     let mut limit = libc::rlimit {
         rlim_cur: 0,
         rlim_max: 0,

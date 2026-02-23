@@ -1,5 +1,6 @@
 //mod changevm;
 //mod config;
+mod clone;
 mod connect;
 mod create;
 mod delete;
@@ -11,6 +12,7 @@ mod stop;
 
 //pub use changevm::ChangeVmCmd;
 //pub use config::ConfigCmd;
+pub use clone::CloneCmd;
 pub use connect::ConnectCmd;
 pub use create::CreateCmd;
 pub use delete::DeleteCmd;
