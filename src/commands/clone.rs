@@ -6,8 +6,6 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::process::Command;
-use std::thread;
-use std::time::Duration;
 
 use crate::commands::start;
 use crate::config;
@@ -324,39 +322,28 @@ fn update_vm_ssh_keys(
 
     // Stop the VM gracefully via SSH
     println!("Stopping VM '{}'...", dest_name);
-    let _ = Command::new("ssh")
-        .arg("-i")
-        .arg(&dest_ssh_key)
-        .arg("-p")
-        .arg(ssh_port)
-        .arg("-o")
-        .arg("StrictHostKeyChecking=no")
-        .arg("-o")
-        .arg("UserKnownHostsFile=/dev/null")
-        .arg("-o")
-        .arg("LogLevel=ERROR")
-        .arg("-o")
-        .arg("ConnectTimeout=5")
-        .arg("agent@localhost")
-        .arg("sync")
-        .arg("&&")
-        .arg("sudo")
-        .arg("poweroff")
-        .arg("-f")
-        .output();
-
-    // Wait for VM process to exit
-    thread::sleep(Duration::from_secs(2));
-
-    // If still running, force kill
-    if utils::is_process_running(vm_pid) {
-        unsafe {
-            libc::kill(vm_pid, libc::SIGKILL);
+    match utils::poweroff_vm_via_ssh(&dest_ssh_key, ssh_port, vm_pid, 10) {
+        Ok(true) => {
+            // VM stopped gracefully
+            let _ = utils::remove_lockfile(dest_name);
+        }
+        Ok(false) => {
+            // VM didn't stop within timeout, force kill
+            println!("VM did not stop gracefully, force killing...");
+            unsafe {
+                libc::kill(vm_pid, libc::SIGKILL);
+            }
+            let _ = utils::remove_lockfile(dest_name);
+        }
+        Err(_) => {
+            // SSH command failed, force kill
+            println!("SSH poweroff failed, force killing...");
+            unsafe {
+                libc::kill(vm_pid, libc::SIGKILL);
+            }
+            let _ = utils::remove_lockfile(dest_name);
         }
     }
-
-    // Clean up lockfile
-    let _ = utils::remove_lockfile(dest_name);
 
     println!("SSH keys updated successfully");
     Ok(())

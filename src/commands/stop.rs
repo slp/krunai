@@ -3,9 +3,6 @@
 
 use clap::Args;
 use std::fs;
-use std::process::Command;
-use std::thread;
-use std::time::Duration;
 
 use crate::config;
 use crate::utils;
@@ -120,37 +117,14 @@ impl StopCmd {
             if let Some(port) = ssh_port {
                 println!("Issuing poweroff command via SSH...");
 
-                let output = Command::new("ssh")
-                    .arg("-i")
-                    .arg(&ssh_key_path)
-                    .arg("-p")
-                    .arg(port)
-                    .arg("-o")
-                    .arg("StrictHostKeyChecking=no")
-                    .arg("-o")
-                    .arg("UserKnownHostsFile=/dev/null")
-                    .arg("-o")
-                    .arg("LogLevel=ERROR")
-                    .arg("-o")
-                    .arg("ConnectTimeout=5")
-                    .arg("agent@localhost")
-                    .arg("sync")
-                    .arg("&&")
-                    .arg("sudo")
-                    .arg("poweroff")
-                    .arg("-f")
-                    .output();
-
-                match output {
-                    Ok(_) => {
-                        // Wait for process to exit
-                        if wait_for_process_exit(pid, self.timeout) {
-                            println!("VM '{}' stopped gracefully", name);
-                        } else {
-                            eprintln!("VM did not stop within {} seconds", self.timeout);
-                            println!("Use --force to kill immediately");
-                            std::process::exit(-1);
-                        }
+                match utils::poweroff_vm_via_ssh(&ssh_key_path, port, pid, self.timeout) {
+                    Ok(true) => {
+                        println!("VM '{}' stopped gracefully", name);
+                    }
+                    Ok(false) => {
+                        eprintln!("VM did not stop within {} seconds", self.timeout);
+                        println!("Use --force to kill immediately");
+                        std::process::exit(-1);
                     }
                     Err(e) => {
                         eprintln!("Error executing SSH command: {}", e);
@@ -178,19 +152,4 @@ impl StopCmd {
 /// Send a signal to a process
 fn kill_process(pid: i32, signal: i32) -> bool {
     unsafe { libc::kill(pid, signal) == 0 }
-}
-
-/// Wait for a process to exit, with timeout
-fn wait_for_process_exit(pid: i32, timeout_secs: u64) -> bool {
-    let check_interval = Duration::from_millis(100);
-    let max_checks = (timeout_secs * 1000) / 100;
-
-    for _ in 0..max_checks {
-        if !utils::is_process_running(pid) {
-            return true;
-        }
-        thread::sleep(check_interval);
-    }
-
-    false
 }

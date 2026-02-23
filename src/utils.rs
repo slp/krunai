@@ -4,7 +4,11 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::Write;
+use std::path::Path;
+use std::process::Command;
 use std::str::FromStr;
+use std::thread;
+use std::time::Duration;
 
 use crate::config;
 use crate::KrunaiConfig;
@@ -126,4 +130,51 @@ pub fn remove_lockfile(vm_name: &str) -> std::io::Result<()> {
         fs::remove_file(&lockfile_path)?;
     }
     Ok(())
+}
+
+/// Issue poweroff command to a VM via SSH and wait for it to stop
+///
+/// Returns Ok(true) if the VM stopped gracefully, Ok(false) if it didn't stop within the timeout,
+/// or Err if there was an error executing the SSH command
+pub fn poweroff_vm_via_ssh(
+    ssh_key_path: &Path,
+    ssh_port: &str,
+    pid: i32,
+    timeout_secs: u64,
+) -> std::io::Result<bool> {
+    // Issue poweroff command via SSH
+    let _status = Command::new("ssh")
+        .arg("-i")
+        .arg(ssh_key_path)
+        .arg("-p")
+        .arg(ssh_port)
+        .arg("-o")
+        .arg("StrictHostKeyChecking=no")
+        .arg("-o")
+        .arg("UserKnownHostsFile=/dev/null")
+        .arg("-o")
+        .arg("LogLevel=ERROR")
+        .arg("-o")
+        .arg("ConnectTimeout=5")
+        .arg("agent@localhost")
+        .arg("sync")
+        .arg("&&")
+        .arg("sudo")
+        .arg("poweroff")
+        .arg("-f")
+        .status()?;
+
+    // Wait for process to exit
+    let check_interval = Duration::from_millis(100);
+    let max_checks = (timeout_secs * 1000) / 100;
+
+    for _ in 0..max_checks {
+        if !is_process_running(pid) {
+            return Ok(true);
+        }
+        thread::sleep(check_interval);
+    }
+
+    // Timeout - VM did not stop
+    Ok(false)
 }

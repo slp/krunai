@@ -225,12 +225,17 @@ pub struct StartCmd {
     /// Connect to VM via SSH after starting
     #[arg(short = 'c', long = "connect")]
     connect: bool,
+
+    /// Force restart if VM is already running
+    #[arg(short = 'f', long = "force")]
+    force: bool,
 }
 
 impl StartCmd {
     pub fn run(self, cfg: &KrunaiConfig) {
         let name = self.name;
         let connect = self.connect;
+        let force = self.force;
 
         // Check if VM exists
         let vmcfg = match cfg.vmconfig_map.get(&name) {
@@ -240,6 +245,18 @@ impl StartCmd {
                 std::process::exit(-1);
             }
         };
+
+        // Check if VM is already running
+        if utils::is_vm_running(&name) {
+            if force {
+                println!("VM '{}' is already running, forcing restart...", name);
+                stop_running_vm(&name, &vmcfg);
+            } else {
+                eprintln!("Error: VM '{}' is already running", name);
+                eprintln!("Use 'krunai stop {}' to stop it first, or use --force to restart", name);
+                std::process::exit(-1);
+            }
+        }
 
         // If connect flag is set, fork before starting VM
         // Parent will wait and connect via SSH
@@ -459,5 +476,66 @@ pub fn set_rlimits() {
     let ret = unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &limit) };
     if ret < 0 {
         eprintln!("Warning: Couldn't set RLIMIT_NOFILE value");
+    }
+}
+
+/// Gracefully stop a running VM
+fn stop_running_vm(vm_name: &str, vmcfg: &crate::VmConfig) {
+    // Get the PID from the VM
+    let pid = match utils::get_vm_pid(vm_name) {
+        Some(pid) => pid,
+        None => {
+            // VM not running (stale check), clean up lockfile just in case
+            let _ = utils::remove_lockfile(vm_name);
+            return;
+        }
+    };
+
+    println!("Stopping VM '{}' (PID {})...", vm_name, pid);
+
+    // Find SSH port
+    let ssh_port = vmcfg
+        .mapped_ports
+        .iter()
+        .find(|(_, guest_port)| guest_port.as_str() == "22")
+        .map(|(host_port, _)| host_port.as_str());
+
+    let ssh_port = match ssh_port {
+        Some(port) => port,
+        None => {
+            eprintln!("Error: No SSH port mapping found for VM '{}'", vm_name);
+            eprintln!("Cannot perform graceful shutdown");
+            std::process::exit(-1);
+        }
+    };
+
+    // Get SSH key path
+    let ssh_key_path = match config::get_vm_ssh_key_path(vm_name) {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("Error getting SSH key path: {}", e);
+            eprintln!("Cannot perform graceful shutdown");
+            std::process::exit(-1);
+        }
+    };
+
+    // Issue poweroff command via SSH
+    println!("Issuing poweroff command via SSH...");
+    let timeout_secs = 10;
+    match utils::poweroff_vm_via_ssh(&ssh_key_path, ssh_port, pid, timeout_secs) {
+        Ok(true) => {
+            println!("VM stopped gracefully");
+            let _ = utils::remove_lockfile(vm_name);
+        }
+        Ok(false) => {
+            eprintln!("Error: VM did not stop within {} seconds", timeout_secs);
+            eprintln!("Please stop the VM manually with: krunai stop --force {}", vm_name);
+            std::process::exit(-1);
+        }
+        Err(e) => {
+            eprintln!("Error executing SSH command: {}", e);
+            eprintln!("Cannot perform graceful shutdown");
+            std::process::exit(-1);
+        }
     }
 }
