@@ -26,7 +26,10 @@ runs:
     - name: Install packages (macOS)
       if: runner.os == 'macOS'
       shell: bash
-      run: brew tap slp/krun && brew install asciidoctor libkrun clang-format llvm
+      run: |
+        sudo mkdir -p /usr/local/lib
+        sudo ln -s /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libclang.dylib /usr/local/lib/libclang.dylib
+        brew tap slp/krun && brew install asciidoctor libkrun clang-format llvm
 
     - name: Install packages (Linux)
       if: runner.os == 'Linux'
