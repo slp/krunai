@@ -170,7 +170,7 @@ pub fn setup_port_forwarding(vm_name: &str, vmcfg: &crate::VmConfig) {
 
         // Redirect stdio to /dev/null
         unsafe {
-            let devnull = libc::open(b"/dev/null\0".as_ptr() as *const i8, libc::O_RDWR);
+            let devnull = libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_RDWR);
             libc::dup2(devnull, 0);
             libc::dup2(devnull, 1);
             libc::dup2(devnull, 2);
