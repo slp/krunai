@@ -83,8 +83,21 @@ Or start and immediately connect via SSH:
 
 ```bash
 cd ~/Project/myproject
-krunai start myagent -c
+krunai start -c myagent
 ```
+
+If the VM is already running, use the `-f` flag to restart it:
+
+```bash
+cd ~/Project/myproject
+krunai start -f myagent
+```
+
+You can combine both flags to always ensure you get a clean shell for working your current project:
+
+```bash
+cd ~/Project/myproject
+krunai start -fc myagent
 
 Your project's directory will be mounted at `~/work` in the sandbox.
 
@@ -95,6 +108,77 @@ Connect to a running VM:
 ```bash
 krunai connect myagent
 ```
+
+## Commands
+
+### list
+
+List all VMs and their status:
+
+```bash
+krunai list
+```
+
+Use `--verbose` for detailed output including disk paths, SSH keys, and port mappings.
+
+### stop
+
+Stop a running VM:
+
+```bash
+krunai stop myagent
+```
+
+### delete
+
+Delete a VM and all its data:
+
+```bash
+krunai delete myagent
+```
+
+### clone
+
+Clone an existing VM to create a new VM with the same configuration and disk contents:
+
+```bash
+krunai clone myagent myagent-clone
+```
+
+The cloned VM will automatically receive a new SSH key pair and SSH port assignment.
+
+### export
+
+Export a VM to a tarball for backup or sharing:
+
+```bash
+krunai export myagent myagent-backup.tar.gz
+```
+
+The tarball contains the VM disk, configuration, and SSH keys. The VM must be stopped before exporting.
+
+### import
+
+Import a VM from a previously exported tarball:
+
+```bash
+krunai import myagent-backup.tar.gz myagent-restored
+```
+
+The imported VM will automatically receive a new SSH port assignment.
+
+## Global Options
+
+### Verbose Output
+
+Use the `--verbose` or `-v` flag with any command to see detailed progress messages:
+
+```bash
+krunai --verbose start myagent
+krunai -v create myagent
+```
+
+Without the verbose flag, only essential messages and errors are displayed.
 
 ## Caveats
 
