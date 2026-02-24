@@ -44,5 +44,6 @@ runs:
         curl -OL https://github.com/containers/libkrun/archive/refs/tags/v1.17.0.tar.gz
         tar xf v1.17.0.tar.gz
         cd libkrun-1.17.0
+        sed -i 's/LIBDIR_Linux = lib64/LIBDIR_Linux = lib/g' Makefile
         make
         sudo make PREFIX=/usr install
