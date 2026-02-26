@@ -276,7 +276,7 @@ echo "KRUNAIDONE"
 
         // Shutdown the VM
         println!("\nShutting down VM...");
-        writeln!(vm_stdin, "/sbin/poweroff -f").ok();
+        writeln!(vm_stdin, "/sbin/reboot -f").ok();
 
         // Wait for child process to complete
         let mut status: libc::c_int = 0;
