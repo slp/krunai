@@ -139,6 +139,8 @@ impl InitCmd {
 
         let setup_script_content = format!(
             r##"#!/bin/bash
+set -e
+trap 'echo "KRUNAIERROR"' ERR
 
 # Configure network
 echo "==> Configuring the network..."
@@ -263,10 +265,16 @@ echo "KRUNAIDONE"
         crate::vprintln!(verbose, "\nExecuting setup script...");
         writeln!(vm_stdin, "/.krunai-setup.sh").ok();
 
+        let mut init_failed = false;
         loop {
             let mut line = String::new();
             if reader.read_line(&mut line).is_ok() && !line.is_empty() {
                 if line.contains("KRUNAIDONE") {
+                    break;
+                }
+                if line.contains("KRUNAIERROR") {
+                    eprintln!("\nError: Template initialization failed");
+                    init_failed = true;
                     break;
                 }
                 print!("VM: {}", line);
@@ -286,6 +294,15 @@ echo "KRUNAIDONE"
 
         // Clean up temporary VM directory
         let _ = fs::remove_dir_all(&temp_vm_dir);
+
+        if init_failed {
+            // Remove the template file
+            if template_path.exists() {
+                eprintln!("Removing failed template...");
+                let _ = fs::remove_file(&template_path);
+            }
+            std::process::exit(-1);
+        }
 
         println!("\nTemplate initialized successfully!");
     }
