@@ -4,7 +4,7 @@
 use clap::Args;
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::os::unix::io::FromRawFd;
 use std::process::Command;
 
@@ -150,11 +150,11 @@ echo "nameserver {}" > /etc/resolv.conf
 
 # Update package lists
 echo "==> Updating package lists..."
-apt-get update -qq
+apt-get update
 
 # Install openssh-server and sudo
 echo "==> Installing cloud-guest-utils openssh-server, sudo, build-essential and git..."
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server sudo cloud-guest-utils build-essential git
+DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server sudo cloud-guest-utils build-essential git
 
 # Resizing partition
 echo "==> Resizing /dev/vda to be as large as possible"
@@ -251,13 +251,6 @@ echo "KRUNAIDONE"
         let vm_stdout = unsafe { File::from_raw_fd(stdout_pipe[0]) };
         let mut reader = BufReader::new(vm_stdout);
 
-        // Wait for VM to boot and get a shell prompt
-        crate::vprintln!(verbose, "Waiting for VM to boot...");
-
-        // Read any initial output
-        let mut buf = [0; 1];
-        let _ = reader.read(&mut buf);
-
         crate::vprintln!(verbose, "\nWriting setup script to VM...");
 
         // Create the script using cat with heredoc
@@ -276,7 +269,7 @@ echo "KRUNAIDONE"
                 if line.contains("KRUNAIDONE") {
                     break;
                 }
-                crate::vprint!(verbose, "VM: {}", line);
+                print!("VM: {}", line);
             }
             line.clear();
         }
