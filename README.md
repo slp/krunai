@@ -103,6 +103,7 @@ You can combine both flags to always ensure you get a clean shell for working yo
 ```bash
 cd ~/Project/myproject
 krunai start -fc myagent
+```
 
 Your project's directory will be mounted at `~/work` in the sandbox.
 
