@@ -78,6 +78,8 @@ impl NetworkProxy for GvproxyImpl {
                     socket_path: config.socket_path.clone(),
                     socket_pair: None,
                     proxy_type: "gvproxy",
+                    guest_ip: "192.168.127.2".to_string(),
+                    router_ip: "192.168.127.1".to_string(),
                 });
             }
             std::thread::sleep(std::time::Duration::from_millis(100));

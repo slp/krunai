@@ -71,26 +71,33 @@ pub fn wait_for_ssh_connectivity(vm_name: &str, ssh_port: &str, ssh_key_path: &P
 }
 
 /// Generate startup script that launches sshd in background and user process in foreground
-pub fn generate_startup_script(vm_name: &str) -> std::io::Result<String> {
+pub fn generate_startup_script(
+    vm_name: &str,
+    guest_ip: &str,
+    router_ip: &str,
+) -> std::io::Result<String> {
     let script_path = config::get_vm_shared_dir(vm_name)?.join("startup.sh");
-    let script_content = r#"#!/bin/bash
+
+    let script_content = format!(
+        r#"#!/bin/bash
 set -e
 
 # Configure network
 echo "==> Configuring the network..."
-ip addr add 192.168.127.2/24 dev eth0
+ip addr add {}/24 dev eth0
 ip link set up dev eth0
-ip route add default via 192.168.127.1
+ip route add default via {}
 rm -f /etc/resolv.conf
-echo "nameserver 192.168.127.1" > /etc/resolv.conf
+echo "nameserver {}" > /etc/resolv.conf
 
 echo "==> Mounting work directory..."
 mount -t virtiofs work /home/agent/work
 
 echo "==> Starting SSH daemon in foreground..."
 /usr/sbin/sshd -D
-"#
-    .to_string();
+"#,
+        guest_ip, router_ip, router_ip
+    );
 
     // Write the script
     let mut file = File::create(&script_path)?;
@@ -325,8 +332,19 @@ impl StartCmd {
 
         crate::vprintln!(verbose, "Starting VM '{}'...", name);
 
-        // Generate startup script
-        let _ = generate_startup_script(&name).unwrap_or_else(|e| {
+        // Start network proxy to get DHCP IPs
+        let proxy_handle =
+            crate::krun::start_network_proxy_for_vm(&vmcfg, verbose).unwrap_or_else(|e| {
+                eprintln!("Error: Failed to start network proxy: {}", e);
+                std::process::exit(-1);
+            });
+
+        // Extract IPs from proxy handle
+        let guest_ip = proxy_handle.guest_ip.as_str();
+        let router_ip = proxy_handle.router_ip.as_str();
+
+        // Generate startup script with dynamic IPs
+        let _ = generate_startup_script(&name, guest_ip, router_ip).unwrap_or_else(|e| {
             eprintln!("Error generating startup script: {}", e);
             std::process::exit(-1);
         });
@@ -366,7 +384,18 @@ impl StartCmd {
         set_rlimits();
 
         // Execute the VM with the startup script
-        unsafe { exec_vm(&vmcfg, false, "startup.sh", workdir, Vec::new(), Vec::new()) };
+        unsafe {
+            exec_vm(
+                &vmcfg,
+                false,
+                "startup.sh",
+                workdir,
+                Vec::new(),
+                Vec::new(),
+                proxy_handle,
+                verbose,
+            )
+        };
 
         // Clean up lockfile on exit (if we reach here)
         let _ = utils::remove_lockfile(&name);

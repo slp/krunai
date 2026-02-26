@@ -1,6 +1,6 @@
 [package]
 name = "krunai"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Sergio Lopez <slp@redhat.com>"]
 description = "Create microVMs for running AI agents"
 repository = "https://github.com/slp/krunai"

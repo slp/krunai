@@ -160,7 +160,7 @@ pub fn poweroff_vm_via_ssh(
         .arg("sync")
         .arg("&&")
         .arg("sudo")
-        .arg("poweroff")
+        .arg("reboot")
         .arg("-f")
         .output()?;
 

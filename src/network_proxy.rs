@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::io;
-use std::os::unix::net::UnixStream;
+use std::os::fd::RawFd;
 use std::process::Child;
 
 /// Common configuration for network proxies
@@ -14,6 +14,7 @@ pub struct ProxyConfig {
     /// SSH port to forward (if any)
     pub ssh_port: Option<u16>,
     /// Socket path for communication
+    #[allow(dead_code)]
     pub socket_path: String,
 }
 
@@ -33,8 +34,8 @@ impl ProxyConfig {
 }
 
 pub struct ProxyPair {
-    pub parent: UnixStream,
-    pub _child: UnixStream,
+    pub parent: RawFd,
+    pub _child: RawFd,
 }
 
 /// Result of starting a network proxy
@@ -48,6 +49,10 @@ pub struct ProxyHandle {
     pub socket_pair: Option<ProxyPair>,
     /// Type of proxy for logging
     pub proxy_type: &'static str,
+    /// Guest IP address (from DHCP or hardcoded fallback)
+    pub guest_ip: String,
+    /// Router IP address (from DHCP or hardcoded fallback)
+    pub router_ip: String,
 }
 
 /// Trait for network proxy implementations
