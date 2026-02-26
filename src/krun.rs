@@ -13,7 +13,7 @@ use crate::network_proxy::ProxyHandle;
 use crate::VmConfig;
 
 /// Start network proxy for a VM and return the handle
-pub fn start_network_proxy_for_vm(vmcfg: &VmConfig) -> std::io::Result<ProxyHandle> {
+pub fn start_network_proxy_for_vm(vmcfg: &VmConfig, verbose: bool) -> std::io::Result<ProxyHandle> {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         // Check if SSH port is mapped (port 22)
@@ -26,9 +26,11 @@ pub fn start_network_proxy_for_vm(vmcfg: &VmConfig) -> std::io::Result<ProxyHand
         let proxy_config = network_proxy::ProxyConfig::new(&vmcfg.name, ssh_port)?;
 
         let handle = network_proxy::start_network_proxy(&proxy_config)?;
-        println!(
+        crate::vprintln!(
+            verbose,
             "\nStarted {} with socket: {}",
-            handle.proxy_type, handle.socket_path
+            handle.proxy_type,
+            handle.socket_path
         );
         Ok(handle)
     }
@@ -42,6 +44,7 @@ pub fn start_network_proxy_for_vm(vmcfg: &VmConfig) -> std::io::Result<ProxyHand
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn exec_vm(
     vmcfg: &VmConfig,
     init: bool,
@@ -50,14 +53,17 @@ pub unsafe fn exec_vm(
     args: Vec<CString>,
     env_pairs: Vec<CString>,
     proxy_handle: ProxyHandle,
+    verbose: bool,
 ) {
-    //krun_sys::krun_set_log_level(9);
+    if verbose && std::env::var("RUST_LOG").is_ok() {
+        krun_sys::krun_set_log_level(9);
+    }
 
     let ctx = krun_sys::krun_create_ctx() as u32;
 
     let ret = krun_sys::krun_set_vm_config(ctx, vmcfg.cpus.try_into().unwrap(), vmcfg.mem);
     if ret < 0 {
-        println!("Error setting VM config");
+        eprintln!("Error setting VM config");
         std::process::exit(-1);
     }
 
@@ -67,7 +73,7 @@ pub unsafe fn exec_vm(
     let label_cstr = CString::new("root").unwrap();
     let label_ptr = label_cstr.as_ptr();
 
-    println!("Configuring disk: {}", vmcfg.disk_path);
+    crate::vprintln!(verbose, "Configuring disk: {}", vmcfg.disk_path);
     let ret = krun_sys::krun_add_disk2(
         ctx,
         label_ptr,
@@ -76,7 +82,7 @@ pub unsafe fn exec_vm(
         false,
     );
     if ret < 0 {
-        println!("Error adding disk");
+        eprintln!("Error adding disk");
         std::process::exit(-1);
     }
 
@@ -88,7 +94,7 @@ pub unsafe fn exec_vm(
 
     let ret = krun_sys::krun_set_root_disk_remount(ctx, device_ptr, fstype_ptr, std::ptr::null());
     if ret < 0 {
-        println!("Error configuring root disk");
+        eprintln!("Error configuring root disk");
         std::process::exit(-1);
     }
 
@@ -101,7 +107,7 @@ pub unsafe fn exec_vm(
 
     let ret = krun_sys::krun_add_virtiofs(ctx, tag_ptr, path_ptr);
     if ret < 0 {
-        println!("Error configuring krunai virtio-fs");
+        eprintln!("Error configuring krunai virtio-fs");
         std::process::exit(-1);
     }
 
@@ -114,21 +120,21 @@ pub unsafe fn exec_vm(
 
         let ret = krun_sys::krun_add_virtiofs(ctx, tag_ptr, path_ptr);
         if ret < 0 {
-            println!("Error configuring workdir virtio-fs");
+            eprintln!("Error configuring workdir virtio-fs");
             std::process::exit(-1);
         }
     }
 
     let ret = krun_sys::krun_disable_implicit_vsock(ctx);
     if ret < 0 {
-        println!("Error disabling implicit vsock");
+        eprintln!("Error disabling implicit vsock");
         std::process::exit(-1);
     }
 
     // Configure a vsock device without TSI. We just need it for TIMESYNC.
     let ret = krun_sys::krun_add_vsock(ctx, 0);
     if ret < 0 {
-        println!("Error configuring vsock");
+        eprintln!("Error configuring vsock");
         std::process::exit(-1);
     }
 
@@ -155,7 +161,7 @@ pub unsafe fn exec_vm(
         )
     };
     if ret < 0 {
-        println!("Error configuring the network");
+        eprintln!("Error configuring the network");
         std::process::exit(-1);
     }
 
@@ -196,13 +202,13 @@ pub unsafe fn exec_vm(
     };
     let ret = krun_sys::krun_set_exec(ctx, c_cmd.as_ptr(), argv.as_ptr(), env.as_ptr());
     if ret < 0 {
-        println!("Error setting VM config");
+        eprintln!("Error setting VM config");
         std::process::exit(-1);
     }
 
     let ret = krun_sys::krun_start_enter(ctx);
     if ret < 0 {
-        println!("Error starting VM");
+        eprintln!("Error starting VM");
         std::process::exit(-1);
     }
 }

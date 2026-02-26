@@ -505,6 +505,7 @@ impl CreateCmd {
         let vm_for_daemon = vmcfg.clone();
         let daemon_name = name.clone();
         let daemon_envs = self.envs.clone();
+        let daemon_verbose = verbose;
 
         match daemonize_vm(&name) {
             Ok(pid) if pid > 0 => {}
@@ -513,10 +514,11 @@ impl CreateCmd {
 
                 // Start network proxy to get DHCP IPs
                 let proxy_handle =
-                    crate::krun::start_network_proxy_for_vm(&vm_for_daemon).unwrap_or_else(|e| {
-                        eprintln!("Error: Failed to start network proxy: {}", e);
-                        std::process::exit(-1);
-                    });
+                    crate::krun::start_network_proxy_for_vm(&vm_for_daemon, daemon_verbose)
+                        .unwrap_or_else(|e| {
+                            eprintln!("Error: Failed to start network proxy: {}", e);
+                            std::process::exit(-1);
+                        });
 
                 // Extract IPs from proxy handle
                 let guest_ip = proxy_handle.guest_ip.as_str();
@@ -535,6 +537,7 @@ impl CreateCmd {
                         Vec::new(),
                         Vec::new(),
                         proxy_handle,
+                        daemon_verbose,
                     );
                 }
                 // Clean up lockfile on exit (if we reach here)
