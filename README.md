@@ -21,9 +21,12 @@ brew tap slp/krun
 brew install krunai
 ```
 
-### Linux
+### Fedora
 
-Coming soon, waiting on a new libkrunfw release.
+```bash
+sudo dnf copr enable slp/krunai
+sudo dnf install krunai
+```
 
 ## Quick Start
 
