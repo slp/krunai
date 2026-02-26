@@ -244,9 +244,6 @@ fn update_vm_ssh_keys(
 
     crate::vprintln!(verbose, "Starting VM '{}'...", dest_name);
 
-    // Generate startup script
-    start::generate_startup_script(dest_name)?;
-
     let cwd = env::current_dir()?;
     let workdir = cwd.to_str();
 
@@ -270,6 +267,20 @@ fn update_vm_ssh_keys(
             std::process::exit(-1);
         }
 
+        // Start network proxy to get DHCP IPs
+        let proxy_handle =
+            crate::krun::start_network_proxy_for_vm(&vmcfg_for_vm).unwrap_or_else(|e| {
+                eprintln!("Error: Failed to start network proxy: {}", e);
+                std::process::exit(-1);
+            });
+
+        // Extract IPs from proxy handle
+        let guest_ip = proxy_handle.guest_ip.as_str();
+        let router_ip = proxy_handle.router_ip.as_str();
+
+        // Generate startup script with dynamic IPs
+        let _ = start::generate_startup_script(&name_for_vm, guest_ip, router_ip);
+
         start::set_rlimits();
 
         // Execute the VM
@@ -281,6 +292,7 @@ fn update_vm_ssh_keys(
                 workdir,
                 Vec::new(),
                 Vec::new(),
+                proxy_handle,
             )
         };
 

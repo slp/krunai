@@ -106,23 +106,40 @@ impl InitCmd {
         });
 
         // Create a temporary VmConfig for initialization
+        // Add a temporary SSH port mapping (even though we won't use SSH)
+        let mut temp_ports = HashMap::new();
+        temp_ports.insert("30000".to_string(), "22".to_string());
+
         let temp_vmcfg = VmConfig {
             name: temp_vm_name.to_string(),
             disk_path: template_path.to_str().unwrap().to_string(),
-            mapped_ports: HashMap::new(),
+            mapped_ports: temp_ports,
             cpus: cfg.default_cpus,
             mem: cfg.default_mem,
         };
 
-        let setup_script_content = r#"#!/bin/bash
+        // Start network proxy to get DHCP IPs
+        crate::vprintln!(verbose, "Starting network proxy...");
+        let proxy_handle = crate::krun::start_network_proxy_for_vm(&temp_vmcfg).unwrap_or_else(|e| {
+            eprintln!("Error: Failed to start network proxy: {}", e);
+            std::process::exit(-1);
+        });
+
+        // Extract IPs from proxy handle
+        let guest_ip = &proxy_handle.guest_ip;
+        let router_ip = &proxy_handle.router_ip;
+
+        crate::vprintln!(verbose, "Using guest IP: {}, router IP: {}", guest_ip, router_ip);
+
+        let setup_script_content = format!(r##"#!/bin/bash
 
 # Configure network
 echo "==> Configuring the network..."
-ip addr add 192.168.127.2/24 dev eth0
+ip addr add {}/24 dev eth0
 ip link set up dev eth0
-ip route add default via 192.168.127.1
+ip route add default via {}
 rm /etc/resolv.conf
-echo "nameserver 192.168.127.1" > /etc/resolv.conf
+echo "nameserver {}" > /etc/resolv.conf
 
 # Update package lists
 echo "==> Updating package lists..."
@@ -155,7 +172,7 @@ chmod +x /.krunai.sh
 echo "==> Done"
 sync
 echo "KRUNAIDONE"
-"#;
+"##, guest_ip, router_ip, router_ip);
 
         crate::vprintln!(verbose, "\nStarting VM with serial console...");
 
@@ -199,7 +216,15 @@ echo "KRUNAIDONE"
                 libc::close(stdout_pipe[1]);
 
                 // Run a simple shell to interact with
-                exec_vm(&temp_vmcfg, true, "/bin/sh", None, Vec::new(), Vec::new());
+                exec_vm(
+                    &temp_vmcfg,
+                    true,
+                    "/bin/sh",
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    proxy_handle,
+                );
             }
             std::process::exit(0);
         }

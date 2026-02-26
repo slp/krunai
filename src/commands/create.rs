@@ -136,7 +136,12 @@ fn daemonize_vm(vm_name: &str) -> std::io::Result<i32> {
 }
 
 /// Generate VM setup script
-fn generate_setup_script(vm_name: &str, envs: &[String]) -> std::io::Result<()> {
+fn generate_setup_script(
+    vm_name: &str,
+    envs: &[String],
+    guest_ip: &str,
+    router_ip: &str,
+) -> std::io::Result<()> {
     let script_path = config::get_vm_setup_script_path(vm_name)?;
     let pubkey_path = config::get_vm_ssh_pubkey_path(vm_name)?;
 
@@ -167,11 +172,11 @@ fn generate_setup_script(vm_name: &str, envs: &[String]) -> std::io::Result<()> 
 set -e
 
 echo "==> Configuring the network..."
-ip addr add 192.168.127.2/24 dev eth0
+ip addr add {}/24 dev eth0
 ip link set up dev eth0
-ip route add default via 192.168.127.1
+ip route add default via {}
 rm -f /etc/resolv.conf
-echo "nameserver 192.168.127.1" > /etc/resolv.conf
+echo "nameserver {}" > /etc/resolv.conf
 
 # Create agent group if it doesn't exist
 if ! getent group {gid} >/dev/null 2>&1; then
@@ -236,7 +241,8 @@ echo "    Starting SSH service in foreground..."
 echo "==> Removing general sudo permission for agent user"
 rm /etc/sudoers.d/agent-all
 sync
-"#
+"#,
+        guest_ip, router_ip, router_ip
     );
 
     // Write the script
@@ -466,12 +472,6 @@ impl CreateCmd {
             std::process::exit(-1);
         });
 
-        // Generate VM setup script
-        generate_setup_script(&name, &self.envs).unwrap_or_else(|e| {
-            eprintln!("Error generating setup script: {}", e);
-            std::process::exit(-1);
-        });
-
         let vmcfg = VmConfig {
             name: name.clone(),
             disk_path,
@@ -504,11 +504,27 @@ impl CreateCmd {
         // Daemonize and start VM
         let vm_for_daemon = vmcfg.clone();
         let daemon_name = name.clone();
+        let daemon_envs = self.envs.clone();
 
         match daemonize_vm(&name) {
             Ok(pid) if pid > 0 => {}
             Ok(_) => {
-                // Child/daemon process - run exec_vm
+                // Child/daemon process - start proxy, generate script, run exec_vm
+
+                // Start network proxy to get DHCP IPs
+                let proxy_handle =
+                    crate::krun::start_network_proxy_for_vm(&vm_for_daemon).unwrap_or_else(|e| {
+                        eprintln!("Error: Failed to start network proxy: {}", e);
+                        std::process::exit(-1);
+                    });
+
+                // Extract IPs from proxy handle
+                let guest_ip = proxy_handle.guest_ip.as_str();
+                let router_ip = proxy_handle.router_ip.as_str();
+
+                // Generate VM setup script with dynamic IPs
+                let _ = generate_setup_script(&daemon_name, &daemon_envs, guest_ip, router_ip);
+
                 set_rlimits();
                 unsafe {
                     exec_vm(
@@ -518,6 +534,7 @@ impl CreateCmd {
                         workdir,
                         Vec::new(),
                         Vec::new(),
+                        proxy_handle,
                     );
                 }
                 // Clean up lockfile on exit (if we reach here)

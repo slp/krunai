@@ -9,7 +9,38 @@ use mac_address::MacAddress;
 
 use crate::config::get_vm_shared_dir;
 use crate::network_proxy;
+use crate::network_proxy::ProxyHandle;
 use crate::VmConfig;
+
+/// Start network proxy for a VM and return the handle
+pub fn start_network_proxy_for_vm(vmcfg: &VmConfig) -> std::io::Result<ProxyHandle> {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        // Check if SSH port is mapped (port 22)
+        let ssh_port = vmcfg
+            .mapped_ports
+            .iter()
+            .find(|(_, guest_port)| guest_port.as_str() == "22")
+            .and_then(|(host_port, _)| host_port.parse::<u16>().ok());
+
+        let proxy_config = network_proxy::ProxyConfig::new(&vmcfg.name, ssh_port)?;
+
+        let handle = network_proxy::start_network_proxy(&proxy_config)?;
+        println!(
+            "\nStarted {} with socket: {}",
+            handle.proxy_type, handle.socket_path
+        );
+        Ok(handle)
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Network proxy not supported on this platform",
+        ))
+    }
+}
 
 pub unsafe fn exec_vm(
     vmcfg: &VmConfig,
@@ -18,37 +49,9 @@ pub unsafe fn exec_vm(
     workdir: Option<&str>,
     args: Vec<CString>,
     env_pairs: Vec<CString>,
+    proxy_handle: ProxyHandle,
 ) {
     //krun_sys::krun_set_log_level(9);
-
-    // Start network proxy (gvproxy on macOS, passt on Linux)
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    let proxy_handle = {
-        // Check if SSH port is mapped (port 22)
-        let ssh_port = vmcfg
-            .mapped_ports
-            .iter()
-            .find(|(_, guest_port)| guest_port.as_str() == "22")
-            .and_then(|(host_port, _)| host_port.parse::<u16>().ok());
-
-        let proxy_config = network_proxy::ProxyConfig::new(&vmcfg.name, ssh_port)
-            .expect("Failed to create network proxy config");
-
-        match network_proxy::start_network_proxy(&proxy_config) {
-            Ok(handle) => {
-                println!(
-                    "\nStarted {} with socket: {}",
-                    handle.proxy_type, handle.socket_path
-                );
-                Some(handle)
-            }
-            Err(e) => {
-                eprintln!("Warning: Failed to start network proxy: {}", e);
-                eprintln!("Continuing without network proxy support...");
-                None
-            }
-        }
-    };
 
     let ctx = krun_sys::krun_create_ctx() as u32;
 
@@ -129,33 +132,31 @@ pub unsafe fn exec_vm(
         std::process::exit(-1);
     }
 
-    if let Some(proxy_handle) = proxy_handle {
-        let mac = MacAddress::from_str("5a:94:ef:e4:0c:ee").unwrap();
-        let ret = if let Some(socket_pair) = proxy_handle.socket_pair {
-            krun_sys::krun_add_net_unixstream(
-                ctx,
-                std::ptr::null(),
-                socket_pair.parent.as_raw_fd(),
-                mac.bytes().as_mut_ptr(),
-                COMPAT_NET_FEATURES,
-                0,
-            )
-        } else {
-            let path_cstr = CString::new(proxy_handle.socket_path).unwrap();
-            let path_ptr = path_cstr.as_ptr();
-            krun_sys::krun_add_net_unixstream(
-                ctx,
-                path_ptr,
-                -1,
-                mac.bytes().as_mut_ptr(),
-                COMPAT_NET_FEATURES,
-                0,
-            )
-        };
-        if ret < 0 {
-            println!("Error configuring the network");
-            std::process::exit(-1);
-        }
+    let mac = MacAddress::from_str("5a:94:ef:e4:0c:ee").unwrap();
+    let ret = if let Some(socket_pair) = proxy_handle.socket_pair {
+        krun_sys::krun_add_net_unixstream(
+            ctx,
+            std::ptr::null(),
+            socket_pair.parent.as_raw_fd(),
+            mac.bytes().as_mut_ptr(),
+            COMPAT_NET_FEATURES,
+            0,
+        )
+    } else {
+        let path_cstr = CString::new(proxy_handle.socket_path).unwrap();
+        let path_ptr = path_cstr.as_ptr();
+        krun_sys::krun_add_net_unixstream(
+            ctx,
+            path_ptr,
+            -1,
+            mac.bytes().as_mut_ptr(),
+            COMPAT_NET_FEATURES,
+            0,
+        )
+    };
+    if ret < 0 {
+        println!("Error configuring the network");
+        std::process::exit(-1);
     }
 
     let mut ports = Vec::new();
