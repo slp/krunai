@@ -109,6 +109,9 @@ impl NetworkProxy for PasstImpl {
         // Configure in foreground mode (so we can manage the process)
         cmd.arg("--foreground");
 
+        // Tell passt to only use IPv4 to speed up readiness.
+        cmd.arg("-4");
+
         // Configure port forwarding if SSH port is specified
         if let Some(ssh_port) = config.ssh_port {
             // passt uses different format: -t <host_port>:<guest_port>
