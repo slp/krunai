@@ -32,7 +32,7 @@ fn test_ssh_connection(_vm_name: &str, ssh_port: &str, ssh_key_path: &Path) -> b
         .arg("-o")
         .arg("UserKnownHostsFile=/dev/null")
         .arg("-o")
-        .arg("ConnectTimeout=5")
+        .arg("ConnectTimeout=1")
         .arg("-o")
         .arg("BatchMode=yes")
         .arg("agent@localhost")
@@ -93,10 +93,16 @@ echo "nameserver {}" > /etc/resolv.conf
 echo "==> Mounting work directory..."
 mount -t virtiofs work /home/agent/work
 
-echo "==> Starting SSH daemon in foreground..."
-/usr/sbin/sshd -D
+echo "==> Starting SSH daemon..."
+/usr/sbin/sshd
+
+# Stimulate the network and ARP tables
+ping -c 1 {}
+
+echo "KRUNAIREADY"
+sleep inf
 "#,
-        guest_ip, router_ip, router_ip
+        guest_ip, router_ip, router_ip, router_ip
     );
 
     // Write the script
@@ -273,6 +279,19 @@ impl StartCmd {
             }
         }
 
+        // Remove old VM log file to ensure fresh output
+        if let Ok(log_path) = config::get_vm_logs_dir(&name) {
+            let vm_log_path = log_path.join("vm.log");
+            let _ = std::fs::remove_file(vm_log_path);
+        }
+
+        // Start network proxy to get DHCP IPs
+        let proxy_handle =
+            crate::krun::start_network_proxy_for_vm(&vmcfg, verbose).unwrap_or_else(|e| {
+                eprintln!("Error: Failed to start network proxy: {}", e);
+                std::process::exit(-1);
+            });
+
         // If connect flag is set, fork before starting VM
         // Parent will wait and connect via SSH
         // Child will start the VM normally
@@ -290,14 +309,36 @@ impl StartCmd {
                     .find(|(_, gp)| gp.as_str() == "22")
                 {
                     if let Ok(ssh_key_path) = config::get_vm_ssh_key_path(&name) {
-                        thread::sleep(Duration::from_millis(200));
-                        if wait_for_ssh_connectivity(&name, host_port, &ssh_key_path) {
-                            crate::vprintln!(verbose, "\nOpening interactive SSH session...");
-                            crate::vprintln!(
-                                verbose,
-                                "(Type 'exit' or press Ctrl+D to close the session)\n"
-                            );
+                        // Wait for KRUNAIREADY in VM log
+                        if let Ok(log_path) = config::get_vm_logs_dir(&name) {
+                            let vm_log_path = log_path.join("vm.log");
+                            crate::vprintln!(verbose, "Waiting for VM to be ready...");
 
+                            let mut ready = false;
+                            let start_time = std::time::Instant::now();
+                            let timeout = Duration::from_secs(30);
+
+                            while start_time.elapsed() < timeout {
+                                if let Ok(log_content) = std::fs::read_to_string(&vm_log_path) {
+                                    if log_content.contains("KRUNAIREADY") {
+                                        ready = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if !ready {
+                                eprintln!("Warning: VM did not become ready within timeout");
+                            }
+                        }
+
+                        crate::vprintln!(verbose, "\nOpening interactive SSH session...");
+                        crate::vprintln!(
+                            verbose,
+                            "(Type 'exit' or press Ctrl+D to close the session)\n"
+                        );
+
+                        if wait_for_ssh_connectivity(&name, host_port, &ssh_key_path) {
                             let _ = Command::new("ssh")
                                 .arg("-i")
                                 .arg(&ssh_key_path)
@@ -331,13 +372,6 @@ impl StartCmd {
         }
 
         crate::vprintln!(verbose, "Starting VM '{}'...", name);
-
-        // Start network proxy to get DHCP IPs
-        let proxy_handle =
-            crate::krun::start_network_proxy_for_vm(&vmcfg, verbose).unwrap_or_else(|e| {
-                eprintln!("Error: Failed to start network proxy: {}", e);
-                std::process::exit(-1);
-            });
 
         // Extract IPs from proxy handle
         let guest_ip = proxy_handle.guest_ip.as_str();
