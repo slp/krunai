@@ -1,6 +1,10 @@
 # krunai
 
-An easy to use, fast and powerful tool for running AI agents inside microVM sandboxes.
+A CLI tool for running AI agents inside microVM sandboxes.
+
+## Demo
+
+https://github.com/user-attachments/assets/d1269848-229c-427c-b539-34cda44b53dd
 
 ## Requirements
 
