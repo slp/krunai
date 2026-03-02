@@ -42,12 +42,9 @@ impl DeleteCmd {
 
         // Ask for confirmation unless --force is used
         if !self.force {
-            crate::vprintln!(
-                verbose,
-                "Are you sure you want to delete VM '{}'? (y/N)",
-                name
-            );
-            use std::io::{self, BufRead};
+            use std::io::{self, BufRead, Write};
+            print!("Are you sure you want to delete VM '{}'? (y/N) ", name);
+            let _ = io::stdout().flush();
             let stdin = io::stdin();
             let mut lines = stdin.lock().lines();
 
