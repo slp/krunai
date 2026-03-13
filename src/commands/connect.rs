@@ -18,6 +18,10 @@ pub struct ConnectCmd {
     #[arg(short, long, default_value = "agent")]
     user: String,
 
+    /// Force pseudo-terminal allocation (for interactive programs)
+    #[arg(short = 't', long = "tty")]
+    tty: bool,
+
     /// Additional SSH options to pass through
     #[arg(short = 'o', long = "option")]
     ssh_options: Vec<String>,
@@ -101,6 +105,11 @@ impl ConnectCmd {
 
         // Add user@host
         cmd.arg(format!("{}@localhost", self.user));
+
+        // Force PTY allocation if requested (needed for interactive)
+        if self.tty {
+            cmd.arg("-tt");
+        }
 
         // Add optional command
         if !self.command.is_empty() {
