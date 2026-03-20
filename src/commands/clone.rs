@@ -148,6 +148,7 @@ impl CloneCmd {
             mapped_ports: dest_mapped_ports,
             cpus: source_vmcfg.cpus,
             mem: source_vmcfg.mem,
+            volumes: source_vmcfg.volumes.clone(),
         };
 
         // Save configuration
@@ -280,7 +281,7 @@ fn update_vm_ssh_keys(
         let router_ip = proxy_handle.router_ip.as_str();
 
         // Generate startup script with dynamic IPs
-        let _ = start::generate_startup_script(&name_for_vm, guest_ip, router_ip);
+        let _ = start::generate_startup_script(&name_for_vm, guest_ip, router_ip, &vmcfg_for_vm.volumes);
 
         start::set_rlimits();
 

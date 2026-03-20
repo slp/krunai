@@ -16,7 +16,7 @@ use crate::krun::exec_vm;
 use crate::utils::{
     self, find_available_ssh_port, has_ssh_port_mapping, port_pairs_to_hash_map, PortPair,
 };
-use crate::{KrunaiConfig, VmConfig};
+use crate::{KrunaiConfig, VmConfig, VolumeMountConfig};
 
 const TEMPLATE_DISK_NAME: &str = "debian-13-nocloud.qcow2";
 const SSH_CONNECT_RETRIES: u32 = 100;
@@ -405,6 +405,50 @@ fn copy_disk_template(vm_name: &str, verbose: bool) -> std::io::Result<String> {
     })
 }
 
+fn parse_volume_spec(s: &str) -> Result<VolumeMountConfig, String> {
+    let parts: Vec<&str> = s.splitn(3, ':').collect();
+    let (host_path, guest_path, read_only) = match parts.len() {
+        2 => (parts[0].to_string(), parts[1].to_string(), false),
+        3 => {
+            let read_only = match parts[2] {
+                "ro" => true,
+                "rw" => false,
+                other => {
+                    return Err(format!(
+                        "invalid mount mode '{}', expected 'ro' or 'rw'",
+                        other
+                    ))
+                }
+            };
+            (parts[0].to_string(), parts[1].to_string(), read_only)
+        }
+        _ => return Err("expected format: host_path:guest_path[:ro|rw]".to_string()),
+    };
+
+    Ok(VolumeMountConfig {
+        host_path,
+        guest_path,
+        read_only,
+    })
+}
+
+fn parse_volume(s: &str) -> Result<VolumeMountConfig, String> {
+    let vol = parse_volume_spec(s)?;
+
+    let path = Path::new(&vol.host_path);
+    if !path.exists() {
+        return Err(format!("host path '{}' does not exist", vol.host_path));
+    }
+    if !path.is_dir() {
+        return Err(format!(
+            "host path '{}' is not a directory. Only directories can be mounted as volumes",
+            vol.host_path
+        ));
+    }
+
+    Ok(vol)
+}
+
 /// Create a new microVM
 #[derive(Args, Debug)]
 pub struct CreateCmd {
@@ -426,6 +470,10 @@ pub struct CreateCmd {
     /// Amount of RAM in megabytes to allocate to the VM
     #[arg(long = "mem")]
     mem: Option<u32>,
+
+    /// Mount a host directory into the VM (format: host_path:guest_path[:ro|rw], default rw)
+    #[arg(short = 'v', long = "volume", value_parser = parse_volume)]
+    volumes: Vec<VolumeMountConfig>,
 
     /// Optional shell script to be executed in the VM for setting up the AI agent.
     script: Option<String>,
@@ -477,6 +525,7 @@ impl CreateCmd {
             mapped_ports: mapped_ports.clone(),
             cpus: self.cpus.unwrap_or(cfg.default_cpus),
             mem: self.mem.unwrap_or(cfg.default_mem),
+            volumes: self.volumes,
         };
 
         // Save configuration before starting VM
@@ -753,5 +802,117 @@ impl CreateCmd {
 
         // Clean up lockfile
         let _ = utils::remove_lockfile(&name);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_volume_spec_host_guest() {
+        let vol = parse_volume_spec("/host/path:/guest/path").unwrap();
+        assert_eq!(vol.host_path, "/host/path");
+        assert_eq!(vol.guest_path, "/guest/path");
+        assert!(!vol.read_only);
+    }
+
+    #[test]
+    fn parse_volume_spec_read_only() {
+        let vol = parse_volume_spec("/host/path:/guest/path:ro").unwrap();
+        assert_eq!(vol.host_path, "/host/path");
+        assert_eq!(vol.guest_path, "/guest/path");
+        assert!(vol.read_only);
+    }
+
+    #[test]
+    fn parse_volume_spec_read_write_explicit() {
+        let vol = parse_volume_spec("/host/path:/guest/path:rw").unwrap();
+        assert_eq!(vol.host_path, "/host/path");
+        assert_eq!(vol.guest_path, "/guest/path");
+        assert!(!vol.read_only);
+    }
+
+    #[test]
+    fn parse_volume_spec_invalid_mode() {
+        let err = parse_volume_spec("/host:/guest:xx").unwrap_err();
+        assert!(err.contains("invalid mount mode"));
+    }
+
+    #[test]
+    fn parse_volume_spec_missing_guest() {
+        let err = parse_volume_spec("/host-only").unwrap_err();
+        assert!(err.contains("expected format"));
+    }
+
+    #[test]
+    fn parse_volume_validates_host_exists() {
+        let err = parse_volume("/nonexistent/path:/guest").unwrap_err();
+        assert!(err.contains("does not exist"));
+    }
+
+    #[test]
+    fn parse_volume_validates_host_is_dir() {
+        // Use Cargo.toml as a file that exists but is not a directory
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        let file_path = format!("{}/Cargo.toml", manifest);
+        let err = parse_volume(&format!("{}:/guest", file_path)).unwrap_err();
+        assert!(err.contains("not a directory"));
+    }
+
+    #[test]
+    fn parse_volume_valid_directory() {
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        let vol = parse_volume(&format!("{}:/guest/path", manifest)).unwrap();
+        assert_eq!(vol.host_path, manifest);
+        assert_eq!(vol.guest_path, "/guest/path");
+        assert!(!vol.read_only);
+    }
+
+    #[test]
+    fn volume_mount_config_serialization_roundtrip() {
+        let vol = VolumeMountConfig {
+            host_path: "/data".to_string(),
+            guest_path: "/mnt/data".to_string(),
+            read_only: true,
+        };
+        let json = serde_json::to_string(&vol).unwrap();
+        let deserialized: VolumeMountConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.host_path, "/data");
+        assert_eq!(deserialized.guest_path, "/mnt/data");
+        assert!(deserialized.read_only);
+    }
+
+    #[test]
+    fn vm_config_without_volumes_deserializes() {
+        // Ensures backward compatibility: old configs without volumes field still work
+        let json = r#"{
+            "name": "test",
+            "disk_path": "/disk",
+            "cpus": 4,
+            "mem": 8192,
+            "mapped_ports": {}
+        }"#;
+        let cfg: VmConfig = serde_json::from_str(json).unwrap();
+        assert!(cfg.volumes.is_empty());
+    }
+
+    #[test]
+    fn vm_config_with_volumes_deserializes() {
+        let json = r#"{
+            "name": "test",
+            "disk_path": "/disk",
+            "cpus": 4,
+            "mem": 8192,
+            "mapped_ports": {},
+            "volumes": [
+                {"host_path": "/a", "guest_path": "/b", "read_only": false},
+                {"host_path": "/c", "guest_path": "/d", "read_only": true}
+            ]
+        }"#;
+        let cfg: VmConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(cfg.volumes.len(), 2);
+        assert_eq!(cfg.volumes[0].host_path, "/a");
+        assert!(cfg.volumes[1].read_only);
     }
 }

@@ -75,8 +75,26 @@ pub fn generate_startup_script(
     vm_name: &str,
     guest_ip: &str,
     router_ip: &str,
+    volumes: &[crate::VolumeMountConfig],
 ) -> std::io::Result<String> {
     let script_path = config::get_vm_shared_dir(vm_name)?.join("startup.sh");
+
+    let mut volume_commands = String::new();
+    for (i, vol) in volumes.iter().enumerate() {
+        let tag = format!("vol{}", i);
+        let ro_flag = if vol.read_only { " -o ro" } else { "" };
+        volume_commands.push_str(&format!(
+            "\necho \"==> Mounting volume: {} -> {}{}\"",
+            vol.host_path,
+            vol.guest_path,
+            if vol.read_only { " (ro)" } else { "" }
+        ));
+        volume_commands.push_str(&format!("\nmkdir -p {}", vol.guest_path));
+        volume_commands.push_str(&format!(
+            "\nmount -t virtiofs{} {} {}",
+            ro_flag, tag, vol.guest_path
+        ));
+    }
 
     let script_content = format!(
         r#"#!/bin/bash
@@ -92,6 +110,7 @@ echo "nameserver {}" > /etc/resolv.conf
 
 echo "==> Mounting work directory..."
 mount -t virtiofs work /home/agent/work
+{volume_commands}
 
 echo "==> Starting SSH daemon..."
 /usr/sbin/sshd
@@ -378,7 +397,7 @@ impl StartCmd {
         let router_ip = proxy_handle.router_ip.as_str();
 
         // Generate startup script with dynamic IPs
-        let _ = generate_startup_script(&name, guest_ip, router_ip).unwrap_or_else(|e| {
+        let _ = generate_startup_script(&name, guest_ip, router_ip, &vmcfg.volumes).unwrap_or_else(|e| {
             eprintln!("Error generating startup script: {}", e);
             std::process::exit(-1);
         });

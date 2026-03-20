@@ -38,6 +38,15 @@ pub struct VmConfig {
     pub cpus: u32,
     pub mem: u32,
     pub mapped_ports: HashMap<String, String>,
+    #[serde(default)]
+    pub volumes: Vec<VolumeMountConfig>,
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct VolumeMountConfig {
+    pub host_path: String,
+    pub guest_path: String,
+    pub read_only: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
