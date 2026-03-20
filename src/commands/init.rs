@@ -116,6 +116,7 @@ impl InitCmd {
             mapped_ports: temp_ports,
             cpus: cfg.default_cpus,
             mem: cfg.default_mem,
+            volumes: Vec::new(),
         };
 
         // Start network proxy to get DHCP IPs

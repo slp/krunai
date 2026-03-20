@@ -125,6 +125,22 @@ pub unsafe fn exec_vm(
         }
     }
 
+    for (i, vol) in vmcfg.volumes.iter().enumerate() {
+        let tag = format!("vol{}", i);
+        let tag_cstr = CString::new(tag.as_str()).unwrap();
+        let tag_ptr = tag_cstr.as_ptr();
+
+        let path_cstr = CString::new(vol.host_path.as_str()).unwrap();
+        let path_ptr = path_cstr.as_ptr();
+
+        crate::vprintln!(verbose, "Adding extra volume {}: {} -> {}", i, vol.host_path, vol.guest_path);
+        let ret = krun_sys::krun_add_virtiofs(ctx, tag_ptr, path_ptr);
+        if ret < 0 {
+            eprintln!("Error configuring extra volume virtio-fs: {}", vol.host_path);
+            std::process::exit(-1);
+        }
+    }
+
     let ret = krun_sys::krun_disable_implicit_vsock(ctx);
     if ret < 0 {
         eprintln!("Error disabling implicit vsock");
