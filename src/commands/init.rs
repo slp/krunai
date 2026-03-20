@@ -172,6 +172,8 @@ sed -E -i 's/.*(session.*motd.*)/\#\1/' /etc/pam.d/sshd
 echo "==> Writing init script"
 cat > /.krunai.sh << 'EOFINIT'
 #!/bin/sh
+mount -t tmpfs tmpfs /tmp
+mount -t tmpfs tmpfs /run
 mkdir -p /run/sshd
 mkdir -p /krunai
 mount -t virtiofs krunai /krunai
