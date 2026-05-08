@@ -15,6 +15,7 @@ use crate::commands::{
     CloneCmd, ConnectCmd, CreateCmd, DeleteCmd, ExportCmd, ImportCmd, InitCmd, ListCmd, StartCmd,
     StopCmd,
 };
+use crate::network_proxy::NetworkProxyType;
 use clap::{Parser, Subcommand};
 #[cfg(target_os = "macos")]
 use nix::unistd::execve;
@@ -22,7 +23,7 @@ use serde_derive::{Deserialize, Serialize};
 
 mod commands;
 mod config;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 mod gvproxy;
 mod krun;
 mod network_proxy;
@@ -74,6 +75,11 @@ struct Cli {
     /// Enable verbose output
     #[arg(short, long, global = true)]
     verbose: bool,
+
+    /// Network proxy to use (gvproxy or passt, default: gvproxy)
+    #[arg(short = 'n', long, global = true, default_value = "gvproxy")]
+    network_proxy: NetworkProxyType,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -158,16 +164,17 @@ fn main() {
     let cli_args = Cli::parse();
 
     let verbose = cli_args.verbose;
+    let network_proxy = cli_args.network_proxy;
     match cli_args.command {
-        Command::Clone(cmd) => cmd.run(&mut cfg, verbose),
+        Command::Clone(cmd) => cmd.run(&mut cfg, verbose, network_proxy),
         Command::Connect(cmd) => cmd.run(&cfg, verbose),
-        Command::Create(cmd) => cmd.run(&mut cfg, verbose),
+        Command::Create(cmd) => cmd.run(&mut cfg, verbose, network_proxy),
         Command::Delete(cmd) => cmd.run(&mut cfg, verbose),
         Command::Export(cmd) => cmd.run(&cfg, verbose),
         Command::Import(cmd) => cmd.run(&mut cfg, verbose),
-        Command::Init(cmd) => cmd.run(&cfg, verbose),
+        Command::Init(cmd) => cmd.run(&cfg, verbose, network_proxy),
         Command::List(cmd) => cmd.run(&cfg, verbose),
-        Command::Start(cmd) => cmd.run(&cfg, verbose),
+        Command::Start(cmd) => cmd.run(&cfg, verbose, network_proxy),
         Command::Stop(cmd) => cmd.run(&cfg, verbose),
     }
 }

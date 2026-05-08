@@ -9,11 +9,15 @@ use mac_address::MacAddress;
 
 use crate::config::get_vm_shared_dir;
 use crate::network_proxy;
-use crate::network_proxy::ProxyHandle;
+use crate::network_proxy::{NetworkProxyType, ProxyHandle};
 use crate::VmConfig;
 
 /// Start network proxy for a VM and return the handle
-pub fn start_network_proxy_for_vm(vmcfg: &VmConfig, verbose: bool) -> std::io::Result<ProxyHandle> {
+pub fn start_network_proxy_for_vm(
+    vmcfg: &VmConfig,
+    verbose: bool,
+    proxy_type: NetworkProxyType,
+) -> std::io::Result<ProxyHandle> {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         // Check if SSH port is mapped (port 22)
@@ -25,7 +29,7 @@ pub fn start_network_proxy_for_vm(vmcfg: &VmConfig, verbose: bool) -> std::io::R
 
         let proxy_config = network_proxy::ProxyConfig::new(&vmcfg.name, ssh_port)?;
 
-        let handle = network_proxy::start_network_proxy(&proxy_config)?;
+        let handle = network_proxy::start_network_proxy(&proxy_config, proxy_type)?;
         crate::vprintln!(
             verbose,
             "\nStarted {} with socket: {}",
@@ -133,10 +137,19 @@ pub unsafe fn exec_vm(
         let path_cstr = CString::new(vol.host_path.as_str()).unwrap();
         let path_ptr = path_cstr.as_ptr();
 
-        crate::vprintln!(verbose, "Adding extra volume {}: {} -> {}", i, vol.host_path, vol.guest_path);
+        crate::vprintln!(
+            verbose,
+            "Adding extra volume {}: {} -> {}",
+            i,
+            vol.host_path,
+            vol.guest_path
+        );
         let ret = krun_sys::krun_add_virtiofs(ctx, tag_ptr, path_ptr);
         if ret < 0 {
-            eprintln!("Error configuring extra volume virtio-fs: {}", vol.host_path);
+            eprintln!(
+                "Error configuring extra volume virtio-fs: {}",
+                vol.host_path
+            );
             std::process::exit(-1);
         }
     }

@@ -4,6 +4,29 @@
 use std::io;
 use std::os::fd::RawFd;
 use std::process::Child;
+use std::str::FromStr;
+
+/// Network proxy type to use for VM networking
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkProxyType {
+    Gvproxy,
+    Passt,
+}
+
+impl FromStr for NetworkProxyType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "gvproxy" => Ok(NetworkProxyType::Gvproxy),
+            "passt" => Ok(NetworkProxyType::Passt),
+            other => Err(format!(
+                "Unknown network proxy: '{}'. Use 'gvproxy' or 'passt'.",
+                other
+            )),
+        }
+    }
+}
 
 /// Common configuration for network proxies
 #[derive(Debug, Clone)]
@@ -66,23 +89,25 @@ pub trait NetworkProxy {
 }
 
 /// Start the appropriate network proxy for the current platform
-pub fn start_network_proxy(config: &ProxyConfig) -> io::Result<ProxyHandle> {
-    #[cfg(target_os = "macos")]
-    {
-        crate::gvproxy::GvproxyImpl::start(config)
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        crate::passt::PasstImpl::start(config)
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "Network proxy not supported on this platform",
-        ))
+pub fn start_network_proxy(
+    config: &ProxyConfig,
+    proxy_type: NetworkProxyType,
+) -> io::Result<ProxyHandle> {
+    match proxy_type {
+        NetworkProxyType::Gvproxy => crate::gvproxy::GvproxyImpl::start(config),
+        NetworkProxyType::Passt => {
+            #[cfg(target_os = "linux")]
+            {
+                crate::passt::PasstImpl::start(config)
+            }
+            #[cfg(target_os = "macos")]
+            {
+                Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "passt is not available on macOS",
+                ))
+            }
+        }
     }
 }
 

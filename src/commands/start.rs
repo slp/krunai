@@ -265,7 +265,12 @@ pub struct StartCmd {
 }
 
 impl StartCmd {
-    pub fn run(self, cfg: &KrunaiConfig, verbose: bool) {
+    pub fn run(
+        self,
+        cfg: &KrunaiConfig,
+        verbose: bool,
+        proxy_type: crate::network_proxy::NetworkProxyType,
+    ) {
         let name = self.name;
         let connect = self.connect;
         let force = self.force;
@@ -305,8 +310,8 @@ impl StartCmd {
         }
 
         // Start network proxy to get DHCP IPs
-        let proxy_handle =
-            crate::krun::start_network_proxy_for_vm(&vmcfg, verbose).unwrap_or_else(|e| {
+        let proxy_handle = crate::krun::start_network_proxy_for_vm(&vmcfg, verbose, proxy_type)
+            .unwrap_or_else(|e| {
                 eprintln!("Error: Failed to start network proxy: {}", e);
                 std::process::exit(-1);
             });
@@ -397,10 +402,12 @@ impl StartCmd {
         let router_ip = proxy_handle.router_ip.as_str();
 
         // Generate startup script with dynamic IPs
-        let _ = generate_startup_script(&name, guest_ip, router_ip, &vmcfg.volumes).unwrap_or_else(|e| {
-            eprintln!("Error generating startup script: {}", e);
-            std::process::exit(-1);
-        });
+        let _ = generate_startup_script(&name, guest_ip, router_ip, &vmcfg.volumes).unwrap_or_else(
+            |e| {
+                eprintln!("Error generating startup script: {}", e);
+                std::process::exit(-1);
+            },
+        );
 
         let cwd = env::current_dir().unwrap();
         let workdir = cwd.to_str();
