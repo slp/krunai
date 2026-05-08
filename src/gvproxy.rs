@@ -2,10 +2,31 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::io::{self, ErrorKind};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use crate::config;
 use crate::network_proxy::{NetworkProxy, ProxyConfig, ProxyHandle};
+
+const GVPROXY_SEARCH_PATHS: &[&str] = &["/usr/libexec/podman/gvproxy"];
+
+fn which_gvproxy() -> PathBuf {
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in path.split(':') {
+            let p = PathBuf::from(dir).join("gvproxy");
+            if p.exists() {
+                return p;
+            }
+        }
+    }
+    for path in GVPROXY_SEARCH_PATHS {
+        let p = PathBuf::from(path);
+        if p.exists() {
+            return p;
+        }
+    }
+    PathBuf::from("gvproxy")
+}
 
 /// gvproxy implementation for macOS
 pub struct GvproxyImpl;
@@ -37,7 +58,8 @@ impl NetworkProxy for GvproxyImpl {
         // Remove existing socket if it exists
         let _ = std::fs::remove_file(&config.socket_path);
 
-        let mut cmd = Command::new("gvproxy");
+        let gvproxy_path = which_gvproxy();
+        let mut cmd = Command::new(&gvproxy_path);
 
         // Set the Unix socket for communication
         cmd.arg("-listen-qemu")
