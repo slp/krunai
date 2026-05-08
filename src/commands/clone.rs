@@ -285,15 +285,17 @@ fn update_vm_ssh_keys(
                     std::process::exit(-1);
                 });
 
-        // Extract IPs from proxy handle
+        // Extract IPs and netmask from proxy handle
         let guest_ip = proxy_handle.guest_ip.as_str();
         let router_ip = proxy_handle.router_ip.as_str();
+        let netmask = proxy_handle.netmask;
 
         // Generate startup script with dynamic IPs
         let _ = start::generate_startup_script(
             &name_for_vm,
             guest_ip,
             router_ip,
+            netmask,
             &vmcfg_for_vm.volumes,
         );
 

@@ -15,15 +15,32 @@ use crate::network_proxy::{NetworkProxy, ProxyConfig, ProxyHandle, ProxyPair};
 /// passt implementation for Linux
 pub struct PasstImpl;
 
+/// Convert dotted decimal netmask to prefix length (e.g. 255.255.255.0 -> 24)
+fn netmask_to_prefix(mask: &str) -> Option<u8> {
+    let octets: Vec<&str> = mask.split('.').collect();
+    if octets.len() != 4 {
+        return None;
+    }
+    let parts: Result<Vec<u32>, _> = octets.iter().map(|o| o.parse::<u32>()).collect();
+    let parts = parts.ok()?;
+    let mask_val = (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
+    let ones = mask_val.count_ones();
+    if (mask_val >> 31).count_ones() != 0 && mask_val.trailing_zeros() != 0 {
+        return None; // Not a contiguous mask
+    }
+    Some(ones as u8)
+}
+
 /// Parse DHCP information from passt's stdout
-/// Returns (guest_ip, router_ip) with fallback to hardcoded values if parsing fails
+/// Returns (guest_ip, router_ip, netmask) with fallback to hardcoded values if parsing fails
 fn parse_passt_dhcp_info(
     child_stderr: ChildStderr,
     mut log_file: std::fs::File,
-) -> io::Result<(String, String)> {
+) -> io::Result<(String, String, u8)> {
     let reader = BufReader::new(child_stderr);
     let mut guest_ip: Option<String> = None;
     let mut router_ip: Option<String> = None;
+    let mut netmask: Option<u8> = None;
     let mut in_dhcp_section = false;
 
     // Set up timeout using a separate thread
@@ -60,6 +77,11 @@ fn parse_passt_dhcp_info(
                 if let Some(ip) = trimmed.split(':').nth(1) {
                     router_ip = Some(ip.trim().to_string());
                 }
+            } else if trimmed.starts_with("mask:") {
+                if let Some(mask) = trimmed.split(':').nth(1) {
+                    let mask_str = mask.trim();
+                    netmask = netmask_to_prefix(mask_str);
+                }
             }
 
             // If we have both IPs, we're done
@@ -81,13 +103,14 @@ fn parse_passt_dhcp_info(
     }
 
     // Return parsed IPs or error if not found
-    match (guest_ip, router_ip) {
-        (Some(guest), Some(router)) => Ok((guest, router)),
-        (None, _) => Err(io::Error::new(
+    match (guest_ip, router_ip, netmask) {
+        (Some(guest), Some(router), Some(mask)) => Ok((guest, router, mask)),
+        (Some(guest), Some(router), None) => Ok((guest, router, 24)),
+        (None, _, _) => Err(io::Error::new(
             io::ErrorKind::NotFound,
             "Failed to parse guest IP from passt DHCP output",
         )),
-        (_, None) => Err(io::Error::new(
+        (_, None, _) => Err(io::Error::new(
             io::ErrorKind::NotFound,
             "Failed to parse router IP from passt DHCP output",
         )),
@@ -147,7 +170,7 @@ impl NetworkProxy for PasstImpl {
             .ok_or_else(|| io::Error::other("Failed to capture passt stdout"))?;
 
         // Parse DHCP info (also writes to log)
-        let (guest_ip, router_ip) = parse_passt_dhcp_info(child_stderr, log_file)?;
+        let (guest_ip, router_ip, netmask) = parse_passt_dhcp_info(child_stderr, log_file)?;
 
         Ok(ProxyHandle {
             child,
@@ -159,6 +182,7 @@ impl NetworkProxy for PasstImpl {
             proxy_type: "passt",
             guest_ip,
             router_ip,
+            netmask,
         })
     }
 

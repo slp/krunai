@@ -76,6 +76,8 @@ pub struct ProxyHandle {
     pub guest_ip: String,
     /// Router IP address (from DHCP or hardcoded fallback)
     pub router_ip: String,
+    /// Subnet mask prefix length (e.g., 24 for /24)
+    pub netmask: u8,
 }
 
 /// Trait for network proxy implementations

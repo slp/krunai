@@ -80,6 +80,7 @@ impl NetworkProxy for GvproxyImpl {
                     proxy_type: "gvproxy",
                     guest_ip: "192.168.127.2".to_string(),
                     router_ip: "192.168.127.1".to_string(),
+                    netmask: 24,
                 });
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
