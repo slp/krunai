@@ -192,6 +192,8 @@ if ! id -u agent >/dev/null 2>&1; then
     mkdir -p /home/agent/work
     echo ". ~/.bash_env" >> /home/agent/.bashrc
     echo "cd /home/agent/work" >> /home/agent/.bashrc
+    echo "alias apt='apt-wrapper'" >> /home/agent/.bashrc
+    echo "alias apt-get='apt-wrapper'" >> /home/agent/.bashrc
     echo "agent:agent" | chpasswd
     echo "User 'agent' created with password 'agent'"
 else
@@ -218,14 +220,89 @@ cat > /home/agent/.ssh/authorized_keys << 'EOF'
 chmod 600 /home/agent/.ssh/authorized_keys
 chown -R agent:{gid} /home/agent/.ssh
 
+# Install apt-wrapper
+echo "==> Installing apt-wrapper..."
+cat > /usr/local/bin/apt-wrapper << 'WRAPPEREOF'
+#!/bin/bash
+set -euo pipefail
+
+unset APT_CONFIG DPKG_ADMINDIR LD_PRELOAD LD_LIBRARY_PATH
+export DEBIAN_FRONTEND=noninteractive
+
+ALLOWED_CMDS="install remove purge autoremove update upgrade full-upgrade list search show info policy depends rdepends clean autoclean"
+
+if [ $# -eq 0 ]; then
+    echo "Usage: apt-wrapper <command> [packages...]"
+    echo "Allowed commands: $ALLOWED_CMDS"
+    exit 1
+fi
+
+CMD="$1"
+shift
+
+VALID=0
+for allowed in $ALLOWED_CMDS; do
+    if [ "$CMD" = "$allowed" ]; then
+        VALID=1
+        break
+    fi
+done
+
+if [ "$VALID" -ne 1 ]; then
+    echo "Error: command '$CMD' is not allowed."
+    echo "Allowed commands: $ALLOWED_CMDS"
+    exit 1
+fi
+
+for arg in "$@"; do
+    case "$arg" in
+        -o|--option|-o=*|--option=*)
+            echo "Error: -o/--option is not allowed."
+            exit 1
+            ;;
+        -c|--config-file|-c=*|--config-file=*)
+            echo "Error: -c/--config-file is not allowed."
+            exit 1
+            ;;
+        *::*)
+            echo "Error: inline configuration directives are not allowed."
+            exit 1
+            ;;
+    esac
+done
+
+case "$CMD" in
+    install|remove|purge|show|info|depends|rdepends|policy)
+        for arg in "$@"; do
+            case "$arg" in
+                -*) continue ;;
+            esac
+            if ! echo "$arg" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9.+:~-]*(/[a-zA-Z0-9-]+)?$'; then
+                echo "Error: invalid package name '$arg'."
+                exit 1
+            fi
+        done
+        ;;
+esac
+
+case "$CMD" in
+    search|info|policy|depends|rdepends)
+        exec /usr/bin/apt-cache "$CMD" "$@"
+        ;;
+    *)
+        exec /usr/bin/apt-get "$CMD" -y "$@"
+        ;;
+esac
+WRAPPEREOF
+chmod 755 /usr/local/bin/apt-wrapper
+
 # Allow agent user to use sudo without password
 echo "==> Configuring sudo permissions for 'agent'..."
 echo "agent ALL=(ALL) NOPASSWD: /usr/sbin/reboot" > /etc/sudoers.d/agent-reboot
-echo "agent ALL=(ALL) NOPASSWD: /usr/bin/apt" > /etc/sudoers.d/agent-apt
-echo "agent ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/agent-apt
-echo "agent ALL=(ALL) NOPASSWD: /usr/bin/apt-cache" >> /etc/sudoers.d/agent-apt
+echo "agent ALL=(ALL) NOPASSWD: /usr/local/bin/apt-wrapper" > /etc/sudoers.d/agent-apt
 echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent-all
 chmod 440 /etc/sudoers.d/agent-reboot
+chmod 440 /etc/sudoers.d/agent-apt
 chmod 440 /etc/sudoers.d/agent-all
 
 echo "==> Mounting work directory..."
@@ -708,7 +785,7 @@ impl CreateCmd {
                             "=================================================================="
                         );
                         println!("             *** Install now your AI agent ***\n");
-                        println!("You can also install additional development tools using \"sudo apt\"\n");
+                        println!("You can also install additional development tools using \"sudo apt install <package>\"\n");
                         println!(
                             "(Type 'exit' or press Ctrl+D to close the session and save the VM)"
                         );
