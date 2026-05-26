@@ -24,7 +24,12 @@ pub struct CloneCmd {
 }
 
 impl CloneCmd {
-    pub fn run(self, cfg: &mut KrunaiConfig, verbose: bool) {
+    pub fn run(
+        self,
+        cfg: &mut KrunaiConfig,
+        verbose: bool,
+        proxy_type: crate::network_proxy::NetworkProxyType,
+    ) {
         let source_name = self.source;
         let dest_name = self.destination;
 
@@ -160,7 +165,9 @@ impl CloneCmd {
         }
 
         // Update SSH keys in the cloned VM
-        if let Err(e) = update_vm_ssh_keys(&source_name, &dest_name, &dest_vmcfg, verbose) {
+        if let Err(e) =
+            update_vm_ssh_keys(&source_name, &dest_name, &dest_vmcfg, verbose, proxy_type)
+        {
             eprintln!("Error updating SSH keys in cloned VM: {}", e);
             eprintln!("The VM was cloned but you may need to manually update the SSH keys");
             std::process::exit(-1);
@@ -214,6 +221,7 @@ fn update_vm_ssh_keys(
     dest_name: &str,
     dest_vmcfg: &crate::VmConfig,
     verbose: bool,
+    proxy_type: crate::network_proxy::NetworkProxyType,
 ) -> std::io::Result<()> {
     crate::vprintln!(verbose, "Updating SSH keys in cloned VM...");
 
@@ -270,18 +278,26 @@ fn update_vm_ssh_keys(
         }
 
         // Start network proxy to get DHCP IPs
-        let proxy_handle = crate::krun::start_network_proxy_for_vm(&vmcfg_for_vm, verbose_for_vm)
-            .unwrap_or_else(|e| {
-                eprintln!("Error: Failed to start network proxy: {}", e);
-                std::process::exit(-1);
-            });
+        let proxy_handle =
+            crate::krun::start_network_proxy_for_vm(&vmcfg_for_vm, verbose_for_vm, proxy_type)
+                .unwrap_or_else(|e| {
+                    eprintln!("Error: Failed to start network proxy: {}", e);
+                    std::process::exit(-1);
+                });
 
-        // Extract IPs from proxy handle
+        // Extract IPs and netmask from proxy handle
         let guest_ip = proxy_handle.guest_ip.as_str();
         let router_ip = proxy_handle.router_ip.as_str();
+        let netmask = proxy_handle.netmask;
 
         // Generate startup script with dynamic IPs
-        let _ = start::generate_startup_script(&name_for_vm, guest_ip, router_ip, &vmcfg_for_vm.volumes);
+        let _ = start::generate_startup_script(
+            &name_for_vm,
+            guest_ip,
+            router_ip,
+            netmask,
+            &vmcfg_for_vm.volumes,
+        );
 
         start::set_rlimits();
 

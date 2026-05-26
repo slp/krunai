@@ -141,6 +141,7 @@ fn generate_setup_script(
     envs: &[String],
     guest_ip: &str,
     router_ip: &str,
+    netmask: u8,
 ) -> std::io::Result<()> {
     let script_path = config::get_vm_setup_script_path(vm_name)?;
     let pubkey_path = config::get_vm_ssh_pubkey_path(vm_name)?;
@@ -172,7 +173,7 @@ fn generate_setup_script(
 set -e
 
 echo "==> Configuring the network..."
-ip addr add {}/24 dev eth0
+ip addr add {}/{} dev eth0
 ip link set up dev eth0
 ip route add default via {}
 rm -f /etc/resolv.conf
@@ -241,7 +242,7 @@ echo "==> Removing general sudo permission for agent user"
 rm /etc/sudoers.d/agent-all
 sync
 "#,
-        guest_ip, router_ip, router_ip
+        guest_ip, netmask, router_ip, router_ip
     );
 
     // Write the script
@@ -480,7 +481,12 @@ pub struct CreateCmd {
 }
 
 impl CreateCmd {
-    pub fn run(self, cfg: &mut KrunaiConfig, verbose: bool) {
+    pub fn run(
+        self,
+        cfg: &mut KrunaiConfig,
+        verbose: bool,
+        proxy_type: crate::network_proxy::NetworkProxyType,
+    ) {
         let mut mapped_ports = port_pairs_to_hash_map(self.ports);
         let name = self.name;
 
@@ -554,6 +560,7 @@ impl CreateCmd {
         let daemon_name = name.clone();
         let daemon_envs = self.envs.clone();
         let daemon_verbose = verbose;
+        let daemon_proxy_type = proxy_type;
 
         match daemonize_vm(&name) {
             Ok(pid) if pid > 0 => {}
@@ -561,19 +568,24 @@ impl CreateCmd {
                 // Child/daemon process - start proxy, generate script, run exec_vm
 
                 // Start network proxy to get DHCP IPs
-                let proxy_handle =
-                    crate::krun::start_network_proxy_for_vm(&vm_for_daemon, daemon_verbose)
-                        .unwrap_or_else(|e| {
-                            eprintln!("Error: Failed to start network proxy: {}", e);
-                            std::process::exit(-1);
-                        });
+                let proxy_handle = crate::krun::start_network_proxy_for_vm(
+                    &vm_for_daemon,
+                    daemon_verbose,
+                    daemon_proxy_type,
+                )
+                .unwrap_or_else(|e| {
+                    eprintln!("Error: Failed to start network proxy: {}", e);
+                    std::process::exit(-1);
+                });
 
-                // Extract IPs from proxy handle
+                // Extract IPs and netmask from proxy handle
                 let guest_ip = proxy_handle.guest_ip.as_str();
                 let router_ip = proxy_handle.router_ip.as_str();
+                let netmask = proxy_handle.netmask;
 
                 // Generate VM setup script with dynamic IPs
-                let _ = generate_setup_script(&daemon_name, &daemon_envs, guest_ip, router_ip);
+                let _ =
+                    generate_setup_script(&daemon_name, &daemon_envs, guest_ip, router_ip, netmask);
 
                 set_rlimits();
                 unsafe {

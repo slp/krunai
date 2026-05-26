@@ -75,6 +75,7 @@ pub fn generate_startup_script(
     vm_name: &str,
     guest_ip: &str,
     router_ip: &str,
+    netmask: u8,
     volumes: &[crate::VolumeMountConfig],
 ) -> std::io::Result<String> {
     let script_path = config::get_vm_shared_dir(vm_name)?.join("startup.sh");
@@ -102,7 +103,7 @@ set -e
 
 # Configure network
 echo "==> Configuring the network..."
-ip addr add {}/24 dev eth0
+ip addr add {}/{} dev eth0
 ip link set up dev eth0
 ip route add default via {}
 rm -f /etc/resolv.conf
@@ -121,7 +122,7 @@ ping -c 1 {}
 echo "KRUNAIREADY"
 sleep inf
 "#,
-        guest_ip, router_ip, router_ip, router_ip
+        guest_ip, netmask, router_ip, router_ip, router_ip
     );
 
     // Write the script
@@ -265,7 +266,12 @@ pub struct StartCmd {
 }
 
 impl StartCmd {
-    pub fn run(self, cfg: &KrunaiConfig, verbose: bool) {
+    pub fn run(
+        self,
+        cfg: &KrunaiConfig,
+        verbose: bool,
+        proxy_type: crate::network_proxy::NetworkProxyType,
+    ) {
         let name = self.name;
         let connect = self.connect;
         let force = self.force;
@@ -305,8 +311,8 @@ impl StartCmd {
         }
 
         // Start network proxy to get DHCP IPs
-        let proxy_handle =
-            crate::krun::start_network_proxy_for_vm(&vmcfg, verbose).unwrap_or_else(|e| {
+        let proxy_handle = crate::krun::start_network_proxy_for_vm(&vmcfg, verbose, proxy_type)
+            .unwrap_or_else(|e| {
                 eprintln!("Error: Failed to start network proxy: {}", e);
                 std::process::exit(-1);
             });
@@ -392,15 +398,17 @@ impl StartCmd {
 
         crate::vprintln!(verbose, "Starting VM '{}'...", name);
 
-        // Extract IPs from proxy handle
+        // Extract IPs and netmask from proxy handle
         let guest_ip = proxy_handle.guest_ip.as_str();
         let router_ip = proxy_handle.router_ip.as_str();
+        let netmask = proxy_handle.netmask;
 
         // Generate startup script with dynamic IPs
-        let _ = generate_startup_script(&name, guest_ip, router_ip, &vmcfg.volumes).unwrap_or_else(|e| {
-            eprintln!("Error generating startup script: {}", e);
-            std::process::exit(-1);
-        });
+        let _ = generate_startup_script(&name, guest_ip, router_ip, netmask, &vmcfg.volumes)
+            .unwrap_or_else(|e| {
+                eprintln!("Error generating startup script: {}", e);
+                std::process::exit(-1);
+            });
 
         let cwd = env::current_dir().unwrap();
         let workdir = cwd.to_str();

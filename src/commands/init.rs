@@ -25,7 +25,12 @@ const TEMPLATE_DISK_NAME: &str = "debian-13-nocloud.qcow2";
 pub struct InitCmd {}
 
 impl InitCmd {
-    pub fn run(self, cfg: &crate::KrunaiConfig, verbose: bool) {
+    pub fn run(
+        self,
+        cfg: &crate::KrunaiConfig,
+        verbose: bool,
+        proxy_type: crate::network_proxy::NetworkProxyType,
+    ) {
         crate::vprintln!(verbose, "Initializing VM template...");
 
         // Get configuration directory
@@ -121,21 +126,24 @@ impl InitCmd {
 
         // Start network proxy to get DHCP IPs
         crate::vprintln!(verbose, "Starting network proxy...");
-        let proxy_handle = crate::krun::start_network_proxy_for_vm(&temp_vmcfg, verbose)
-            .unwrap_or_else(|e| {
-                eprintln!("Error: Failed to start network proxy: {}", e);
-                std::process::exit(-1);
-            });
+        let proxy_handle =
+            crate::krun::start_network_proxy_for_vm(&temp_vmcfg, verbose, proxy_type)
+                .unwrap_or_else(|e| {
+                    eprintln!("Error: Failed to start network proxy: {}", e);
+                    std::process::exit(-1);
+                });
 
-        // Extract IPs from proxy handle
+        // Extract IPs and netmask from proxy handle
         let guest_ip = &proxy_handle.guest_ip;
         let router_ip = &proxy_handle.router_ip;
+        let netmask = proxy_handle.netmask;
 
         crate::vprintln!(
             verbose,
-            "Using guest IP: {}, router IP: {}",
+            "Using guest IP: {}, router IP: {}, netmask: /{}",
             guest_ip,
-            router_ip
+            router_ip,
+            netmask
         );
 
         let setup_script_content = format!(
@@ -145,7 +153,7 @@ trap 'echo "KRUNAIERROR"' ERR
 
 # Configure network
 echo "==> Configuring the network..."
-ip addr add {}/24 dev eth0
+ip addr add {}/{} dev eth0
 ip link set up dev eth0
 ip route add default via {}
 rm /etc/resolv.conf
@@ -185,7 +193,7 @@ echo "==> Done"
 sync
 echo "KRUNAIDONE"
 "##,
-            guest_ip, router_ip, router_ip
+            guest_ip, netmask, router_ip, router_ip
         );
 
         crate::vprintln!(verbose, "\nStarting VM with serial console...");
