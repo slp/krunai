@@ -54,6 +54,7 @@ impl InitCmd {
         crate::vprintln!(verbose, "Destination: {}", template_path.display());
 
         let status = Command::new("curl")
+            .arg("--fail")
             .arg("-L")
             .arg("-o")
             .arg(&template_path)
